@@ -8,6 +8,7 @@ set(LLVM_LINK_COMPONENTS
 add_clang_unittest(ToolingTests
   CommentHandlerTest.cpp
   CompilationDatabaseTest.cpp
+  FormatTest.cpp
   ToolingTest.cpp
   RecursiveASTVisitorTest.cpp
   RefactoringTest.cpp
