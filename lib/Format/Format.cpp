@@ -69,91 +69,159 @@ public:
   }
 
 private:
-  unsigned handlePPDirective(unsigned start) {
-    for (unsigned i = start; i < Tokens.size() - 1; i++) {
-      if (Tokens[i + 1].NewlinesBefore > 0) {
-        llvm::outs() << "skipped pp directive until " << i << "\n";
-        return i;
+  FormatToken Tok;
+  size_t Index;
+  int Level;
+  bool nextToken() {
+    if (Index == Tokens.size())
+      return false;
+    ++Index;
+    if (Index == Tokens.size())
+      return false;
+    Tok = Tokens[Index];
+    return true;
+  }
+
+  bool eof() {
+    return Index == Tokens.size();
+  }
+
+  void parseLevel() {
+    do {
+      switch(Tok.Tok.getKind()) {
+        case tok::hash:
+          parsePPDirective();
+          break;
+        case tok::comment:
+          addNewline(Index, Level);
+          parseComment();
+          break;
+        case tok::l_brace:
+          addNewline(Index, Level);
+          parseBlock();
+          break;
+        case tok::r_brace:
+          return;
+        default:
+          addNewline(Index, Level);
+          parseStatement();
+          break;
+      }
+    } while (!eof());
+  }
+
+  void parseBlock() {
+    if (!nextToken()) return;
+    ++Level;
+    parseLevel();
+    --Level;
+    if (Tok.Tok.getKind() != tok::r_brace) abort();
+    addNewline(Index, Level);
+    nextToken();
+    if (!eof() && Tok.Tok.getKind() == tok::semi)
+      nextToken();
+  }
+
+  void parsePPDirective() {
+    while (nextToken() ) {
+      if (Tok.NewlinesBefore > 0) return;
+    }
+  }
+
+  void parseComment() {
+    while (nextToken()) {
+      if (Tok.NewlinesBefore > 0) return;
+    }
+  }
+
+  void parseStatement() {
+    size_t Start = Index;
+    do {
+      switch (Tok.Tok.getKind()) {
+        case tok::semi:
+          {
+            size_t End = Index;
+            formatContinuation(Start, End, 0);
+            nextToken();
+            return;
+          }
+        case tok::l_paren:
+          parseParens();
+          break;
+        case tok::l_brace:
+          {
+            size_t End = Index;
+            formatContinuation(Start, End, 0);
+            parseBlock(  ); // TODO: Test
+            return;
+          }
+        case tok::raw_identifier:
+          {
+            StringRef Data(Sources.getCharacterData(Tok.Tok.getLocation()),
+                           Tok.Tok.getLength());
+            if (Data == "if") {
+              parseIfThenElse();
+              return;
+            }
+          }
+        default:
+          nextToken();
+          break;
+      }
+    } while (!eof());
+  }
+
+  void parseParens() {
+    if (Tok.Tok.getKind() != tok::l_paren) abort();
+    nextToken();
+    do {
+      switch (Tok.Tok.getKind()) {
+        case tok::l_paren:
+          parseParens();
+          break;
+        case tok::r_paren:
+          nextToken();
+          return;
+        default:
+          nextToken();
+          break;
+      }
+    } while (!eof());
+  }
+
+  void parseIfThenElse() {
+    size_t Start = Index;
+    if (Tok.Tok.getKind() != tok::raw_identifier) abort();
+    if (!nextToken()) return;
+    parseParens();
+    if (Tok.Tok.getKind() == tok::l_brace) {
+      formatContinuation(Start, Index, 0);
+      parseBlock(); // TODO: Level Test
+    } else {
+      formatContinuation(Start, Index - 1, 0);
+      ++Level;
+      addNewline(Index, Level); // TODO: Test
+      parseStatement();
+      --Level;
+    }
+    //if (!nextToken()) return;
+    if (Tok.Tok.getKind() == tok::raw_identifier) {
+      StringRef Data(Sources.getCharacterData(Tok.Tok.getLocation()),
+                     Tok.Tok.getLength());
+      if (Data == "else") {
+        if (!nextToken()) return;
+        parseStatement();
       }
     }
-    return Tokens.size();
   }
 
   /// \brief Split token stream into continuations, i.e. something that we'd
   /// on a single line if we didn't have a column limit.
   void splitAndFormatContinuations() {
-    unsigned Level = 0;
-    unsigned ParenLevel = 0;
-    unsigned ContinuationStart = 0;
-    std::vector<bool> IsCompound;
-    IsCompound.push_back(true);
-    for (unsigned i = 0; i < Tokens.size(); i++) {
-      if (Tokens[i].Tok.getKind() == tok::hash) {
-        llvm::outs() << "hash found\n";
-        i = handlePPDirective(i);
-        ContinuationStart = i + 1;
-        continue;
-      }
-      if (Tokens[i].Tok.getKind() == tok::comment) {
-        if (i == ContinuationStart) {
-          addNewline(ContinuationStart, Level);
-          while (Tokens[i].NewlinesBefore == 0)
-            ++i;
-          ContinuationStart = i + 1;
-        }
-        continue;
-      }
-      if (Tokens[i].Tok.getKind() == tok::l_paren) {
-        ++ParenLevel;
-      } else if (Tokens[i].Tok.getKind() == tok::r_paren) {
-        --ParenLevel;
-      } else if (ParenLevel == 0) {
-        if (Tokens[i].Tok.getKind() == tok::l_brace ||
-            Tokens[i].Tok.getKind() == tok::r_brace ||
-            Tokens[i].Tok.getKind() == tok::semi) {
-          if (Tokens[i].Tok.getKind() == tok::r_brace) {
-            if (i < Tokens.size() - 1) {
-              if (Tokens[i + 1].Tok.getKind() == tok::semi)
-                ++i;
-            }
-            --Level;
-            IsCompound.pop_back();
-            addNewline(ContinuationStart, Level);
-            formatContinuation(ContinuationStart, i, Level);
-
-            while (!IsCompound.back()) {
-              --Level;
-              IsCompound.pop_back();
-            }
-          } else {
-            addNewline(ContinuationStart, Level);
-            formatContinuation(ContinuationStart, i, Level);
-          }
-
-          while (Tokens[i].Tok.getKind() == tok::semi && !IsCompound.back()) {
-            --Level;
-            IsCompound.pop_back();
-          }
-
-          if (Tokens[i].Tok.getKind() == tok::l_brace) {
-            ++Level;
-            IsCompound.push_back(true);
-          }
-
-          ContinuationStart = i + 1;
-        }
-
-        else if (i != ContinuationStart) {
-          if (isIfForOrWhile(Tokens[ContinuationStart].Tok)) {
-            addNewline(ContinuationStart, Level);
-            formatContinuation(ContinuationStart, i - 1, Level);
-            ++Level;
-            IsCompound.push_back(false);
-            ContinuationStart = i;
-          }
-        }
-      }
-    }
+    Index = 0;
+    Tok = Tokens[Index];
+    Level = 0;
+    parseLevel();
   }
 
   // The current state when indenting a continuation.
@@ -180,8 +248,8 @@ private:
     } else {
       bool Space = spaceRequiredBetween(Tokens[Index - 1].Tok,
                                         Tokens[Index].Tok);
-      if (Tokens[Index].NewlinesBefore == 0)
-        Space = Tokens[Index].WhiteSpaceLength > 0;
+      //if (Tokens[Index].NewlinesBefore == 0)
+      //  Space = Tokens[Index].WhiteSpaceLength > 0;
       if (!DryRun)
         setWhitespace(Tokens[Index], 0, Space ? 1 : 0);
       if (Tokens[Index - 1].Tok.getKind() == tok::l_paren)

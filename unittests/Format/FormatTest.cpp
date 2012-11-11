@@ -123,7 +123,7 @@ TEST_F(FormatTest, DoesNotBreakSemiAfterClassDecl) {
 
 TEST_F(FormatTest, UnderstandsPPKeywords) {
   EXPECT_EQ(
-      "#include <a.h>\\\n", format("#include <a.h>\\\nest\nb\n", 0, 1));
+      "#include <a.h>\\\nest\nb\n", format("#include <a.h>\\\nest\nb\n", 0, 1));
 }
 
 } // end namespace tooling
