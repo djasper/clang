@@ -93,17 +93,15 @@ private:
           parsePPDirective();
           break;
         case tok::comment:
-          addNewline(Index, Level);
           parseComment();
           break;
         case tok::l_brace:
-          addNewline(Index, Level);
+          formatContinuation(Index, Index, Level);
           parseBlock();
           break;
         case tok::r_brace:
           return;
         default:
-          addNewline(Index, Level);
           parseStatement();
           break;
       }
@@ -116,7 +114,7 @@ private:
     parseLevel();
     --Level;
     if (Tok.Tok.getKind() != tok::r_brace) abort();
-    addNewline(Index, Level);
+    formatContinuation(Index, Index, Level);
     nextToken();
     if (!eof() && Tok.Tok.getKind() == tok::semi)
       nextToken();
@@ -129,8 +127,12 @@ private:
   }
 
   void parseComment() {
+    size_t Start = Index;
     while (nextToken()) {
-      if (Tok.NewlinesBefore > 0) return;
+      if (Tok.NewlinesBefore > 0) {
+        formatContinuation(Start, Index - 1, Level);
+        return;
+      }
     }
   }
 
@@ -141,7 +143,7 @@ private:
         case tok::semi:
           {
             size_t End = Index;
-            formatContinuation(Start, End, 0);
+            formatContinuation(Start, End, Level);
             nextToken();
             return;
           }
@@ -195,12 +197,11 @@ private:
     if (!nextToken()) return;
     parseParens();
     if (Tok.Tok.getKind() == tok::l_brace) {
-      formatContinuation(Start, Index, 0);
+      formatContinuation(Start, Index, Level);
       parseBlock(); // TODO: Level Test
     } else {
-      formatContinuation(Start, Index - 1, 0);
+      formatContinuation(Start, Index - 1, Level);
       ++Level;
-      addNewline(Index, Level); // TODO: Test
       parseStatement();
       --Level;
     }
@@ -304,6 +305,7 @@ private:
 
   void formatContinuation(unsigned StartIndex, unsigned EndIndex,
                           unsigned Level) {
+    addNewline(StartIndex, Level);
     count = 0;
     IndentState State;
     State.ParenLevel = 0;
