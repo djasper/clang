@@ -64,7 +64,6 @@ private:
 
   Continuation Cont;
   FormatToken FormatTok;
-  unsigned Level;
 
   Lexer &Lex;
   SourceManager &Sources;

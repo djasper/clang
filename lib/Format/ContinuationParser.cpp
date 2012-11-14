@@ -21,7 +21,7 @@ namespace format {
 
 ContinuationParser::ContinuationParser(Lexer &Lex, SourceManager &Sources,
                                        ContinuationConsumer &Callback)
-    : Level(0), Lex(Lex), Sources(Sources), Callback(Callback) {
+    : Lex(Lex), Sources(Sources), Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
 
@@ -54,9 +54,9 @@ void ContinuationParser::parseLevel() {
 void ContinuationParser::parseBlock() {
   nextToken();
   addContinuation();
-  ++Level;
+  ++Cont.Level;
   parseLevel();
-  --Level;
+  --Cont.Level;
   if (FormatTok.Tok.getKind() != tok::r_brace) abort();
   nextToken();
   addContinuation();
@@ -140,9 +140,9 @@ void ContinuationParser::parseIfThenElse() {
     parseBlock();
   } else {
     addContinuation();
-    ++Level;
+    ++Cont.Level;
     parseStatement();
-    --Level;
+    --Cont.Level;
   }
   if (FormatTok.Tok.getKind() == tok::raw_identifier) {
     StringRef Data(Sources.getCharacterData(FormatTok.Tok.getLocation()),
@@ -155,9 +155,8 @@ void ContinuationParser::parseIfThenElse() {
 }
 
 void ContinuationParser::addContinuation() {
-  Cont.Level = Level;
   Callback.formatContinuation(Cont);
-  Cont = Continuation();
+  Cont.Tokens.clear();
 }
 
 bool ContinuationParser::eof() const {

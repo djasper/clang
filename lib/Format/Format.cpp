@@ -24,214 +24,37 @@
 namespace clang {
 namespace format {
 
-class Formatter : public ContinuationConsumer {
+using llvm::MutableArrayRef;
+
+class ContinuationFormatter {
 public:
-  Formatter(Lexer &Lex, SourceManager &Sources,
-            const std::vector<CodeRange> &Ranges)
-      : Lex(Lex), Sources(Sources), EndOfFile(false) {}
+  ContinuationFormatter(SourceManager &Sources,
+                        const Continuation &Cont,
+                        tooling::Replacements &Replaces)
+      : Sources(Sources), Cont(Cont), Replaces(Replaces) {}
 
-  tooling::Replacements format() {
-    ContinuationParser Parser(Lex, Sources, *this);
-    Parser.parse();
-    return Replaces;
-    /*
+  void format() {
+    addNewline(Cont.Tokens[0], Cont.Level);
+    count = 0;
+    IndentState State;
+    State.ParenLevel = 0;
+    State.Column = Cont.Level * 2 + Cont.Tokens[0].Tok.getLength();
 
-    Lex.SetKeepWhitespaceMode(true);
-
-    FormatToken NextToken;
-    NextToken.WhiteSpaceLength = 0;
-
-    // Read token stream and turn tokens into FormatTokens.
-    while (!EndOfFile) {
-      NextToken.Tok = getNextToken();
-      StringRef Data(Sources.getCharacterData(NextToken.Tok.getLocation()),
-          NextToken.Tok.getLength());
-      if (NextToken.WhiteSpaceLength == 0) {
-        NextToken.WhiteSpaceStart = NextToken.Tok.getLocation();
-        NextToken.NewlinesBefore = 0;
+    State.UsedIndent.push_back(Cont.Level * 2);
+    State.Indent.push_back(Cont.Level * 2 + 4);
+    for (unsigned i = 1; i < Cont.Tokens.size(); ++i) {
+      bool InsertNewLine = Cont.Tokens[i].NewlinesBefore > 0;
+      if (!InsertNewLine) {
+        int NoBreak = numLines(State, false, i + 1,
+                               Cont.Tokens.size()-1, 100000);
+        int Break = numLines(State, true, i + 1, Cont.Tokens.size()-1, 100000);
+        InsertNewLine = Break < NoBreak;
       }
-      if (NextToken.Tok.getKind() == tok::unknown) {
-        StringRef Data(Sources.getCharacterData(NextToken.Tok.getLocation()),
-                       NextToken.Tok.getLength());
-        if (std::find(Data.begin(), Data.end(), '\n') != Data.end())
-          ++NextToken.NewlinesBefore;
-        NextToken.WhiteSpaceLength += NextToken.Tok.getLength();
-        continue;
-      }
-      Tokens.push_back(NextToken);
-      NextToken.WhiteSpaceLength = 0;
+      addToken(i, InsertNewLine, false, State);
     }
-
-    splitAndFormatContinuations();
-
-    return Replaces;
-    */
   }
 
 private:
-  FormatToken Tok;
-  size_t Index;
-  int Level;
-  bool nextToken() {
-    if (Index == Tokens.size())
-      return false;
-    ++Index;
-    if (Index == Tokens.size())
-      return false;
-    Tok = Tokens[Index];
-    return true;
-  }
-
-  bool eof() {
-    return Index == Tokens.size();
-  }
-
-  void parseLevel() {
-    do {
-      switch(Tok.Tok.getKind()) {
-        case tok::hash:
-          parsePPDirective();
-          break;
-        case tok::comment:
-          parseComment();
-          break;
-        case tok::l_brace:
-          addContinuation(Index, Index, Level);
-          parseBlock();
-          break;
-        case tok::r_brace:
-          return;
-        default:
-          parseStatement();
-          break;
-      }
-    } while (!eof());
-  }
-
-  void parseBlock() {
-    if (!nextToken()) return;
-    ++Level;
-    parseLevel();
-    --Level;
-    if (Tok.Tok.getKind() != tok::r_brace) abort();
-    addContinuation(Index, Index, Level);
-    nextToken();
-    if (!eof() && Tok.Tok.getKind() == tok::semi)
-      nextToken();
-  }
-
-  void parsePPDirective() {
-    while (nextToken() ) {
-      if (Tok.NewlinesBefore > 0) return;
-    }
-  }
-
-  void parseComment() {
-    size_t Start = Index;
-    while (nextToken()) {
-      if (Tok.NewlinesBefore > 0) {
-        addContinuation(Start, Index - 1, Level);
-        return;
-      }
-    }
-  }
-
-  void parseStatement() {
-    size_t Start = Index;
-    do {
-      switch (Tok.Tok.getKind()) {
-        case tok::semi:
-          {
-            size_t End = Index;
-            addContinuation(Start, End, Level);
-            nextToken();
-            return;
-          }
-        case tok::l_paren:
-          parseParens();
-          break;
-        case tok::l_brace:
-          {
-            size_t End = Index;
-            addContinuation(Start, End, 0);
-            parseBlock(  ); // TODO: Test
-            return;
-          }
-        case tok::raw_identifier:
-          {
-            StringRef Data(Sources.getCharacterData(Tok.Tok.getLocation()),
-                           Tok.Tok.getLength());
-            if (Data == "if") {
-              parseIfThenElse();
-              return;
-            }
-          }
-        default:
-          nextToken();
-          break;
-      }
-    } while (!eof());
-  }
-
-  void parseParens() {
-    if (Tok.Tok.getKind() != tok::l_paren) abort();
-    nextToken();
-    do {
-      switch (Tok.Tok.getKind()) {
-        case tok::l_paren:
-          parseParens();
-          break;
-        case tok::r_paren:
-          nextToken();
-          return;
-        default:
-          nextToken();
-          break;
-      }
-    } while (!eof());
-  }
-
-  void parseIfThenElse() {
-    size_t Start = Index;
-    if (Tok.Tok.getKind() != tok::raw_identifier) abort();
-    if (!nextToken()) return;
-    parseParens();
-    if (Tok.Tok.getKind() == tok::l_brace) {
-      addContinuation(Start, Index, Level);
-      parseBlock(); // TODO: Level Test
-    } else {
-      addContinuation(Start, Index - 1, Level);
-      ++Level;
-      parseStatement();
-      --Level;
-    }
-    //if (!nextToken()) return;
-    if (Tok.Tok.getKind() == tok::raw_identifier) {
-      StringRef Data(Sources.getCharacterData(Tok.Tok.getLocation()),
-                     Tok.Tok.getLength());
-      if (Data == "else") {
-        if (!nextToken()) return;
-        parseStatement();
-      }
-    }
-  }
-
-  void addContinuation(unsigned Start, unsigned End, unsigned Level) {
-    Continuation Cont;
-    Cont.Tokens = ArrayRef<FormatToken>(Tokens).slice(Start, End+1-Start);
-    Cont.Level = Level;
-    formatContinuation(Cont);
-  }
-
-  /// \brief Split token stream into continuations, i.e. something that we'd
-  /// on a single line if we didn't have a column limit.
-  void splitAndFormatContinuations() {
-    Index = 0;
-    Tok = Tokens[Index];
-    Level = 0;
-    parseLevel();
-  }
-
   // The current state when indenting a continuation.
   struct IndentState {
     unsigned ParenLevel;
@@ -314,29 +137,6 @@ private:
     return std::min(NoBreak, Break) + (NewLine ? 1 : 0);
   }
 
-  Continuation Cont;
-
-  virtual void formatContinuation(const Continuation &TheCont) {
-    Cont = TheCont;
-    addNewline(Cont.Tokens[0], Cont.Level);
-    count = 0;
-    IndentState State;
-    State.ParenLevel = 0;
-    State.Column = Cont.Level * 2 + Cont.Tokens[0].Tok.getLength();
-
-    State.UsedIndent.push_back(Cont.Level * 2);
-    State.Indent.push_back(Cont.Level * 2 + 4);
-    for (unsigned i = 1; i < Cont.Tokens.size(); ++i) {
-      bool InsertNewLine = Cont.Tokens[i].NewlinesBefore > 0;
-      if (!InsertNewLine) {
-        int NoBreak = numLines(State, false, i + 1, Cont.Tokens.size()-1, 100000);
-        int Break = numLines(State, true, i + 1, Cont.Tokens.size()-1, 100000);
-        InsertNewLine = Break < NoBreak;
-      }
-      addToken(i, InsertNewLine, false, State);
-    }
-  }
-
   void setWhitespace(const FormatToken& Tok, unsigned NewLines,
                      unsigned Spaces) {
     Replaces.insert(tooling::Replacement(Sources, Tok.WhiteSpaceStart,
@@ -371,12 +171,6 @@ private:
     return true;
   }
 
-  Token getNextToken() {
-    Token tok;
-    EndOfFile = Lex.LexFromRawLexer(tok);
-    return tok;
-  }
-
   /// \brief Add a new line before token \c Index.
   void addNewline(const FormatToken &Token, unsigned Level) {
       //unsigned Index, unsigned Level) {
@@ -389,14 +183,33 @@ private:
     }
   }
 
+  SourceManager &Sources;
+  const Continuation &Cont;
+  tooling::Replacements &Replaces;
+  unsigned int count;
+};
+
+class Formatter : public ContinuationConsumer {
+public:
+  Formatter(Lexer &Lex, SourceManager &Sources,
+            const std::vector<CodeRange> &Ranges)
+      : Lex(Lex), Sources(Sources) {}
+
+  tooling::Replacements format() {
+    ContinuationParser Parser(Lex, Sources, *this);
+    Parser.parse();
+    return Replaces;
+  }
+
+private:
+  virtual void formatContinuation(const Continuation &TheCont) {
+    ContinuationFormatter Formatter(Sources, TheCont, Replaces);
+    Formatter.format();
+  }
+
   Lexer &Lex;
   SourceManager &Sources;
-  bool EndOfFile;
   tooling::Replacements Replaces;
-  std::vector<FormatToken> Tokens;
-
-  // Count number of tried states visited when formatting a continuation.
-  unsigned int count;
 };
 
 tooling::Replacements reformat(Lexer &Lex, SourceManager &Sources,
