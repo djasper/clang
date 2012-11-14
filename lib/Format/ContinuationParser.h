@@ -61,6 +61,7 @@ private:
   bool eof() const;
   void nextToken();
   void parseToken();
+  StringRef identifierName() const;
 
   Continuation Cont;
   FormatToken FormatTok;

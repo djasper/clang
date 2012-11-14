@@ -41,6 +41,7 @@ void ContinuationParser::parseLevel() {
         break;
       case tok::l_brace:
         parseBlock();
+        addContinuation();
         break;
       case tok::r_brace:
         return;
@@ -59,7 +60,6 @@ void ContinuationParser::parseBlock() {
   --Cont.Level;
   if (FormatTok.Tok.getKind() != tok::r_brace) abort();
   nextToken();
-  addContinuation();
   if (FormatTok.Tok.getKind() == tok::semi)
     nextToken();
 }
@@ -96,16 +96,13 @@ void ContinuationParser::parseStatement() {
       case tok::l_brace:
         {
           parseBlock();
+          addContinuation();
           return;
         }
       case tok::raw_identifier:
-        {
-          StringRef Data(Sources.getCharacterData(FormatTok.Tok.getLocation()),
-                         FormatTok.Tok.getLength());
-          if (Data == "if") {
-            parseIfThenElse();
-            return;
-          }
+        if (identifierName() == "if") {
+          parseIfThenElse();
+          return;
         }
       default:
         nextToken();
@@ -136,21 +133,30 @@ void ContinuationParser::parseIfThenElse() {
   if (FormatTok.Tok.getKind() != tok::raw_identifier) abort();
   nextToken();
   parseParens();
+  bool NeedsContinuation = false;
   if (FormatTok.Tok.getKind() == tok::l_brace) {
     parseBlock();
+    NeedsContinuation = true;
   } else {
     addContinuation();
     ++Cont.Level;
     parseStatement();
     --Cont.Level;
   }
-  if (FormatTok.Tok.getKind() == tok::raw_identifier) {
-    StringRef Data(Sources.getCharacterData(FormatTok.Tok.getLocation()),
-                   FormatTok.Tok.getLength());
-    if (Data == "else") {
-      nextToken();
+  if (FormatTok.Tok.getKind() == tok::raw_identifier &&
+      identifierName() == "else") {
+    nextToken();
+    if (FormatTok.Tok.getKind() == tok::l_brace) {
+      parseBlock();
+      addContinuation();
+    } else {
+      addContinuation();
+      ++Cont.Level;
       parseStatement();
+      --Cont.Level;
     }
+  } else if (NeedsContinuation) {
+    addContinuation();
   }
 }
 
@@ -186,6 +192,12 @@ void ContinuationParser::parseToken() {
     if (eof()) return;
     Lex.LexFromRawLexer(FormatTok.Tok);
   }
+}
+
+StringRef ContinuationParser::identifierName() const {
+  if (FormatTok.Tok.getKind() != tok::raw_identifier) abort();
+  return StringRef(Sources.getCharacterData(FormatTok.Tok.getLocation()),
+                   FormatTok.Tok.getLength());
 }
 
 } // end namespace format

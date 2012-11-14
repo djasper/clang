@@ -106,6 +106,38 @@ TEST_F(FormatTest, FormatIfWithoutCompountStatement) {
       format("if(a)if(b) {f();}g();", 0, 1));
 }
 
+TEST_F(FormatTest, ParseIfThenElse) {
+  EXPECT_EQ(
+      "if (true)\n"
+      "  if (true)\n"
+      "    if (true)\n"
+      "      f();\n"
+      "    else\n"
+      "      g();\n"
+      "  else\n"
+      "    h();\n"
+      "else\n"
+      "  i();",
+      format("if(true)\nif(true)\nif(true)\nf();\n"
+             "else\ng();\nelse\nh();\nelse\ni();", 0, 1));
+  EXPECT_EQ(
+      "if (true)\n"
+      "  if (true)\n"
+      "    if (true) {\n"
+      "      if (true)\n"
+      "        f();\n"
+      "    } else {\n"
+      "      g();\n"
+      "    }\n"
+      "  else\n"
+      "    h();\n"
+      "else {\n"
+      "  i();\n"
+      "}",
+      format("if(true)\nif(true)\nif(true){\nif(true)f();\n"
+             "}else{\ng();\n}\nelse\nh();\nelse{\ni();\n}", 0, 1));
+}
+
 TEST_F(FormatTest, UnderstandsSingleLineComments) {
   EXPECT_EQ(
       "// line 1\n// line 2\nvoid f() {\n}\n",
