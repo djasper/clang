@@ -59,18 +59,12 @@ private:
   void parseIfThenElse();
   void addContinuation();
   bool eof() const;
-  const FormatToken &current() const;
-  FormatToken &current();
-  bool nextToken();
-  bool parseToken();
+  void nextToken();
+  void parseToken();
 
   Continuation Cont;
-  //std::vector<FormatToken> Seq;
-  //unsigned StartLevel;
   FormatToken FormatTok;
-  //FormatToken FormatTok;
   unsigned Level;
-  bool Eof;
 
   Lexer &Lex;
   SourceManager &Sources;

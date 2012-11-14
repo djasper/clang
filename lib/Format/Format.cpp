@@ -248,8 +248,6 @@ private:
       ++State.ParenLevel;
     }
     if (Newline) {
-      //llvm::outs() << State.ParenLevel << "  l\n";
-      //llvm::outs() << State.Indent[State.ParenLevel] << "\n";
       if (!DryRun)
         setWhitespace(Cont.Tokens[Index], 1, State.Indent[State.ParenLevel]);
       State.Column = State.Indent[State.ParenLevel] +
@@ -319,14 +317,12 @@ private:
   Continuation Cont;
 
   virtual void formatContinuation(const Continuation &TheCont) {
-    //llvm::outs() << "HHHHEEEEEEEEEEEi " << Cont.Level << "\n";
     Cont = TheCont;
     addNewline(Cont.Tokens[0], Cont.Level);
     count = 0;
     IndentState State;
     State.ParenLevel = 0;
     State.Column = Cont.Level * 2 + Cont.Tokens[0].Tok.getLength();
-    //llvm::outs() << "xxx: " << State.Column << "\n";
 
     State.UsedIndent.push_back(Cont.Level * 2);
     State.Indent.push_back(Cont.Level * 2 + 4);
@@ -339,7 +335,6 @@ private:
       }
       addToken(i, InsertNewLine, false, State);
     }
-    //llvm::outs() << "Tried combinations: " << count << "\n";
   }
 
   void setWhitespace(const FormatToken& Tok, unsigned NewLines,
@@ -348,7 +343,6 @@ private:
                                          Tok.WhiteSpaceLength,
                                          std::string(NewLines, '\n') +
                                          std::string(Spaces, ' ')));
-    llvm::outs() << "N/S " << NewLines << " " << Spaces << "\n";
   }
 
   bool isIfForOrWhile(Token Tok) {
@@ -391,7 +385,6 @@ private:
       unsigned Offset = Sources.getFileOffset(Token.WhiteSpaceStart);
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
-      //llvm::outs() << "L: " << Level << "\n";
       setWhitespace(Token, Newlines, Level * 2);
     }
   }
