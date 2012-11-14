@@ -21,12 +21,12 @@ namespace format {
 
 ContinuationParser::ContinuationParser(Lexer &Lex, SourceManager &Sources,
                                        ContinuationConsumer &Callback)
-    : Level(0), Eof(false), Lex(Lex), Sources(Sources), Callback(Callback) {
+    : /*StartLevel(0),*/ Level(0), Eof(false), Lex(Lex), Sources(Sources), Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
 
 void ContinuationParser::parse() {
-  nextToken();
+  parseToken();
   parseLevel();
 }
 
@@ -40,7 +40,6 @@ void ContinuationParser::parse() {
           parseComment();
           break;
         case tok::l_brace:
-          addContinuation();
           parseBlock();
           break;
         case tok::r_brace:
@@ -53,13 +52,14 @@ void ContinuationParser::parse() {
   }
 
   void ContinuationParser::parseBlock() {
-    if (!nextToken()) return;
+    nextToken();
+    addContinuation();
     ++Level;
     parseLevel();
     --Level;
     if (current().Tok.getKind() != tok::r_brace) abort();
-    addContinuation();
     nextToken();
+    addContinuation();
     if (!eof() && current().Tok.getKind() == tok::semi)
       nextToken();
   }
@@ -88,8 +88,8 @@ void ContinuationParser::parse() {
           {
             //size_t End = Index;
             llvm::outs() << "Semi\n";
-            addContinuation(); //Start, End, Level);
             nextToken();
+            addContinuation(); //Start, End, Level);
             return;
           }
         case tok::l_paren:
@@ -98,7 +98,6 @@ void ContinuationParser::parse() {
         case tok::l_brace:
           {
             //size_t End = Index;
-            addContinuation(); //Start, End, 0);
             parseBlock(  ); // TODO: Test
             return;
           }
@@ -142,7 +141,6 @@ void ContinuationParser::parse() {
     if (!nextToken()) return;
     parseParens();
     if (current().Tok.getKind() == tok::l_brace) {
-      addContinuation(); //Start, Index, Level);
       parseBlock(); // TODO: Level Test
     } else {
       addContinuation(); //Start, Index - 1, Level);
@@ -162,15 +160,26 @@ void ContinuationParser::parse() {
   }
 
   void ContinuationParser::addContinuation() {
-    Callback.formatContinuation(Cont);
-    Cont.Tokens.clear();
+    llvm::outs() << "addContinuation " << Cont.Level << ":";
+    for (int i = 0; i < Cont.Tokens.size(); ++i) {
+      llvm::outs() << Cont.Tokens[i].Tok.getName() << " ";
+    }
+    llvm::outs() << "\n";
+    /*Continuation Cont;
+    Cont.Tokens = Seq;
+    Cont.Level = StartLevel;*/
     Cont.Level = Level;
+    Callback.formatContinuation(Cont);
+    Cont = Continuation();
+    /*Seq.clear();
+    StartLevel = Level;
+    */
     /*
     Continuation Cont;
     Cont.Tokens = ArrayRef<FormatToken>(Tokens).slice(Start, End+1-Start);
     Cont.Level = Level;
     formatContinuation(Cont);
-    */
+   */ 
   }
 
 bool ContinuationParser::eof() const {
@@ -178,16 +187,21 @@ bool ContinuationParser::eof() const {
 }
 
 FormatToken &ContinuationParser::current() {
-  return Cont.Tokens.back();
+  return FormatTok;
 }
 
 const FormatToken &ContinuationParser::current() const {
-  return Cont.Tokens.back();
+  return FormatTok;
 }
 
 bool ContinuationParser::nextToken() {
-  if (!Cont.Tokens.empty() && eof()) return false;
-  Cont.Tokens.push_back(FormatToken());
+  if (eof()) return false;
+  Cont.Tokens.push_back(FormatTok);
+  return parseToken();
+}
+
+bool ContinuationParser::parseToken() {
+  FormatTok = FormatToken();
   Eof = Lex.LexFromRawLexer(current().Tok);
   current().WhiteSpaceStart = current().Tok.getLocation();
 

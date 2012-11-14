@@ -62,8 +62,12 @@ private:
   const FormatToken &current() const;
   FormatToken &current();
   bool nextToken();
+  bool parseToken();
 
   Continuation Cont;
+  //std::vector<FormatToken> Seq;
+  //unsigned StartLevel;
+  FormatToken FormatTok;
   //FormatToken FormatTok;
   unsigned Level;
   bool Eof;
