@@ -25,7 +25,7 @@ protected:
               LangOptions());
     tooling::Replacements Replace = reformat(Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
-    llvm::outs() << Context.getRewrittenText(ID) << "\n";
+    //llvm::outs() << Context.getRewrittenText(ID) << "\n";
     return Context.getRewrittenText(ID);
   }
 };

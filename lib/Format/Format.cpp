@@ -19,28 +19,23 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 
+#include "ContinuationParser.h"
+
 namespace clang {
 namespace format {
 
-using llvm::MutableArrayRef;
-
-struct FormatToken {
-  Token Tok;
-
-  unsigned NewlinesBefore;
-  unsigned WhiteSpaceLength;
-  SourceLocation WhiteSpaceStart;
-};
-
-typedef std::pair<MutableArrayRef<FormatToken>, unsigned> Continuation;
-
-class Formatter {
+class Formatter : public ContinuationConsumer {
 public:
   Formatter(Lexer &Lex, SourceManager &Sources,
             const std::vector<CodeRange> &Ranges)
       : Lex(Lex), Sources(Sources), EndOfFile(false) {}
 
   tooling::Replacements format() {
+    ContinuationParser Parser(Lex, Sources, *this);
+    Parser.parse();
+    return Replaces;
+    /*
+
     Lex.SetKeepWhitespaceMode(true);
 
     FormatToken NextToken;
@@ -70,6 +65,7 @@ public:
     splitAndFormatContinuations();
 
     return Replaces;
+    */
   }
 
 private:
@@ -221,7 +217,9 @@ private:
   }
 
   void addContinuation(unsigned Start, unsigned End, unsigned Level) {
-    Continuation Cont = std::make_pair(MutableArrayRef<FormatToken>(Tokens).slice(Start, End+1-Start), Level);
+    Continuation Cont;
+    Cont.Tokens = ArrayRef<FormatToken>(Tokens).slice(Start, End+1-Start);
+    Cont.Level = Level;
     formatContinuation(Cont);
   }
 
@@ -244,30 +242,36 @@ private:
 
   // Append the token at 'Index' to the IndentState 'State'.
   void addToken(unsigned Index, bool Newline, bool DryRun, IndentState &State) {
-    if (Cont.first[Index].Tok.getKind() == tok::l_paren) {
+    if (Cont.Tokens[Index].Tok.getKind() == tok::l_paren) {
       State.UsedIndent.push_back(State.UsedIndent.back());
       State.Indent.push_back(State.UsedIndent.back() + 4);
       ++State.ParenLevel;
     }
     if (Newline) {
+      llvm::outs() << State.ParenLevel << "  l\n";
+      llvm::outs() << State.Indent[State.ParenLevel] << "\n";
       if (!DryRun)
-        setWhitespace(Cont.first[Index], 1, State.Indent[State.ParenLevel]);
+        setWhitespace(Cont.Tokens[Index], 1, State.Indent[State.ParenLevel]);
       State.Column = State.Indent[State.ParenLevel] +
-          Cont.first[Index].Tok.getLength();
+          Cont.Tokens[Index].Tok.getLength();
       State.UsedIndent[State.ParenLevel] = State.Indent[State.ParenLevel];
     } else {
-      bool Space = spaceRequiredBetween(Cont.first[Index - 1].Tok,
-                                        Cont.first[Index].Tok);
-      //if (Cont.first[Index].NewlinesBefore == 0)
-      //  Space = Cont.first[Index].WhiteSpaceLength > 0;
+      bool Space = spaceRequiredBetween(Cont.Tokens[Index - 1].Tok,
+                                        Cont.Tokens[Index].Tok);
+      //if (Cont.Tokens[Index].NewlinesBefore == 0)
+      //  Space = Cont.Tokens[Index].WhiteSpaceLength > 0;
       if (!DryRun)
-        setWhitespace(Cont.first[Index], 0, Space ? 1 : 0);
-      if (Cont.first[Index - 1].Tok.getKind() == tok::l_paren)
+        setWhitespace(Cont.Tokens[Index], 0, Space ? 1 : 0);
+      if (Cont.Tokens[Index - 1].Tok.getKind() == tok::l_paren)
         State.Indent[State.ParenLevel] = State.Column;
-      State.Column += Cont.first[Index].Tok.getLength() + (Space ? 1 : 0);
+      State.Column += Cont.Tokens[Index].Tok.getLength() + (Space ? 1 : 0);
     }
 
-    if (Cont.first[Index].Tok.getKind() == tok::r_paren) {
+    if (Cont.Tokens[Index].Tok.getKind() == tok::r_paren) {
+      if (State.ParenLevel == 0) {
+        llvm::outs() << "ParenLevel is 0!!!\n";
+        abort();
+      }
       --State.ParenLevel;
       State.Indent.pop_back();
     }
@@ -305,7 +309,7 @@ private:
       return 10000;
 
     int NoBreak = numLines(State, false, Index + 1, EndIndex, StopAt);
-    if (!canBreakAfter(Cont.first[Index - 1].Tok))
+    if (!canBreakAfter(Cont.Tokens[Index - 1].Tok))
       return NoBreak + (NewLine ? 1 : 0);
     int Break = numLines(State, true, Index + 1, EndIndex,
                          std::min(StopAt, NoBreak));
@@ -313,20 +317,24 @@ private:
   }
 
   Continuation Cont;
-  void formatContinuation(Continuation &TheCont) {
+
+  virtual void formatContinuation(const Continuation &TheCont) {
+    llvm::outs() << "HHHHEEEEEEEEEEEi " << Cont.Level << "\n";
     Cont = TheCont;
-    addNewline(Cont.first[0], Cont.second);
+    addNewline(Cont.Tokens[0], Cont.Level);
     count = 0;
     IndentState State;
     State.ParenLevel = 0;
-    State.Column = Level * 2 + Cont.first[0].Tok.getLength();
-    State.UsedIndent.push_back(Level * 2);
-    State.Indent.push_back(Level * 2 + 4);
-    for (unsigned i = 1; i < Cont.first.size(); ++i) {
-      bool InsertNewLine = Cont.first[i].NewlinesBefore > 0;
+    State.Column = Cont.Level * 2 + Cont.Tokens[0].Tok.getLength();
+    llvm::outs() << "xxx: " << State.Column << "\n";
+
+    State.UsedIndent.push_back(Cont.Level * 2);
+    State.Indent.push_back(Cont.Level * 2 + 4);
+    for (unsigned i = 1; i < Cont.Tokens.size(); ++i) {
+      bool InsertNewLine = Cont.Tokens[i].NewlinesBefore > 0;
       if (!InsertNewLine) {
-        int NoBreak = numLines(State, false, i + 1, Cont.first.size()-1, 100000);
-        int Break = numLines(State, true, i + 1, Cont.first.size()-1, 100000);
+        int NoBreak = numLines(State, false, i + 1, Cont.Tokens.size()-1, 100000);
+        int Break = numLines(State, true, i + 1, Cont.Tokens.size()-1, 100000);
         InsertNewLine = Break < NoBreak;
       }
       addToken(i, InsertNewLine, false, State);
@@ -340,6 +348,7 @@ private:
                                          Tok.WhiteSpaceLength,
                                          std::string(NewLines, '\n') +
                                          std::string(Spaces, ' ')));
+    llvm::outs() << "N/S " << NewLines << " " << Spaces << "\n";
   }
 
   bool isIfForOrWhile(Token Tok) {
@@ -375,13 +384,14 @@ private:
   }
 
   /// \brief Add a new line before token \c Index.
-  void addNewline(FormatToken &Token, unsigned Level) {
+  void addNewline(const FormatToken &Token, unsigned Level) {
       //unsigned Index, unsigned Level) {
     if (Token.WhiteSpaceStart.isValid()) {
       unsigned Newlines = Token.NewlinesBefore;
       unsigned Offset = Sources.getFileOffset(Token.WhiteSpaceStart);
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
+      llvm::outs() << "L: " << Level << "\n";
       setWhitespace(Token, Newlines, Level * 2);
     }
   }
