@@ -19,9 +19,9 @@
 namespace clang {
 namespace format {
 
-ContinuationParser::ContinuationParser(Lexer &Lex, SourceManager &Sources,
+ContinuationParser::ContinuationParser(Lexer &Lex, SourceManager &SourceMgr,
                                        ContinuationConsumer &Callback)
-    : Lex(Lex), Sources(Sources), Callback(Callback) {
+    : Lex(Lex), SourceMgr(SourceMgr), Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
 
@@ -85,22 +85,18 @@ void ContinuationParser::parseStatement() {
   do {
     switch (FormatTok.Tok.getKind()) {
       case tok::semi:
-        {
-          nextToken();
-          addContinuation();
-          return;
-        }
+        nextToken();
+        addContinuation();
+        return;
       case tok::l_paren:
         parseParens();
         break;
       case tok::l_brace:
-        {
-          parseBlock();
-          addContinuation();
-          return;
-        }
+        parseBlock();
+        addContinuation();
+        return;
       case tok::raw_identifier:
-        if (identifierName() == "if") {
+        if (tokenText() == "if") {
           parseIfThenElse();
           return;
         }
@@ -112,7 +108,7 @@ void ContinuationParser::parseStatement() {
 } 
 
 void ContinuationParser::parseParens() {
-  if (FormatTok.Tok.getKind() != tok::l_paren) abort();
+  assert(FormatTok.Tok.getKind() == tok::l_paren && "'(' expected.");
   nextToken();
   do {
     switch (FormatTok.Tok.getKind()) {
@@ -143,8 +139,7 @@ void ContinuationParser::parseIfThenElse() {
     parseStatement();
     --Cont.Level;
   }
-  if (FormatTok.Tok.getKind() == tok::raw_identifier &&
-      identifierName() == "else") {
+  if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "else") {
     nextToken();
     if (FormatTok.Tok.getKind() == tok::l_brace) {
       parseBlock();
@@ -170,7 +165,8 @@ bool ContinuationParser::eof() const {
 }
 
 void ContinuationParser::nextToken() {
-  if (eof()) return;
+  if (eof())
+    return;
   Cont.Tokens.push_back(FormatTok);
   return parseToken();
 }
@@ -183,8 +179,7 @@ void ContinuationParser::parseToken() {
   // Consume and record whitespace until we find a significant
   // token.
   while (FormatTok.Tok.getKind() == tok::unknown) {
-    StringRef Data(Sources.getCharacterData(FormatTok.Tok.getLocation()),
-                   FormatTok.Tok.getLength());
+    StringRef Data = tokenText();
     if (std::find(Data.begin(), Data.end(), '\n') != Data.end())
       ++FormatTok.NewlinesBefore;
     FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
@@ -194,10 +189,10 @@ void ContinuationParser::parseToken() {
   }
 }
 
-StringRef ContinuationParser::identifierName() const {
-  if (FormatTok.Tok.getKind() != tok::raw_identifier) abort();
-  return StringRef(Sources.getCharacterData(FormatTok.Tok.getLocation()),
-                   FormatTok.Tok.getLength());
+StringRef ContinuationParser::tokenText() {
+  StringRef Data(SourceMgr.getCharacterData(FormatTok.Tok.getLocation()),
+                 FormatTok.Tok.getLength());
+  return Data;
 }
 
 } // end namespace format

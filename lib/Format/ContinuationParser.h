@@ -21,19 +21,44 @@
 namespace clang {
 namespace format {
 
+/// \brief A wrapper around a \c Token storing information about the
+/// whitespace characters preceeding it.
 struct FormatToken {
   FormatToken() : NewlinesBefore(0), WhiteSpaceLength(0) {}
 
+  /// \brief The \c Token.
   Token Tok;
+
+  /// \brief The number of newlines immediately before the \c Token.
+  ///
+  /// This can be used to determine what the user wrote in the original code
+  /// and thereby e.g. leave an empty line between two function definitions.
   unsigned NewlinesBefore;
-  unsigned WhiteSpaceLength;
+
+  /// \brief The location of the start of the whitespace immediately preceeding
+  /// the \c Token.
+  ///
+  /// Used together with \c WhiteSpaceLength to create a \c Replacement.
   SourceLocation WhiteSpaceStart;
+
+  /// \brief The length in characters of the whitespace immediately preceeding
+  /// the \c Token.
+  unsigned WhiteSpaceLength;
 };
 
+/// \brief A continuation is a sequence of \c Token, that we would like to put
+/// on a single line if there was no column limit.
+///
+/// This is used as a main interface between the \c ContinuationParser and the
+/// \c ContinuationFormatter. The key property is that changing the formatting
+/// within a continuation does not affect any other continuation.
 struct Continuation {
   Continuation() : Level(0) {}
 
+  /// \brief The \c Token comprising this continuation.
   std::vector<FormatToken> Tokens;
+
+  /// \brief The indent level of the \c Continuation.
   unsigned Level;
 };
 
@@ -44,7 +69,7 @@ public:
 
 class ContinuationParser {
 public:
-  ContinuationParser(Lexer &Lex, SourceManager &Sources,
+  ContinuationParser(Lexer &Lex, SourceManager &SourceMgr,
                      ContinuationConsumer &Callback);
 
   void parse();
@@ -61,13 +86,15 @@ private:
   bool eof() const;
   void nextToken();
   void parseToken();
-  StringRef identifierName() const;
+
+  /// Returns the text of \c FormatTok.
+  StringRef tokenText();
 
   Continuation Cont;
   FormatToken FormatTok;
 
   Lexer &Lex;
-  SourceManager &Sources;
+  SourceManager &SourceMgr;
   ContinuationConsumer &Callback;
 };
 

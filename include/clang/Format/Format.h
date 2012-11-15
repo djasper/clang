@@ -37,7 +37,7 @@ struct CodeRange {
 };
 
 /// \brief Reformats the given Ranges in the token stream coming out of \c Lex.
-tooling::Replacements reformat(Lexer &Lex, SourceManager &Sources,
+tooling::Replacements reformat(Lexer &Lex, SourceManager &SourceMgr,
                                std::vector<CodeRange> Ranges);
 
 } // end namespace format
