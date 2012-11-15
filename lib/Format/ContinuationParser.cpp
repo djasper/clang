@@ -126,7 +126,8 @@ void ContinuationParser::parseParens() {
 }
 
 void ContinuationParser::parseIfThenElse() {
-  if (FormatTok.Tok.getKind() != tok::raw_identifier) abort();
+  assert(FormatTok.Tok.getKind() == tok::raw_identifier &&
+         "Identifier expected");
   nextToken();
   parseParens();
   bool NeedsContinuation = false;
@@ -168,7 +169,7 @@ void ContinuationParser::nextToken() {
   if (eof())
     return;
   Cont.Tokens.push_back(FormatTok);
-  return parseToken();
+  parseToken();
 }
 
 void ContinuationParser::parseToken() {

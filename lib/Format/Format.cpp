@@ -42,7 +42,7 @@ public:
 
     State.UsedIndent.push_back(Cont.Level * 2);
     State.Indent.push_back(Cont.Level * 2 + 4);
-    for (unsigned i = 1; i < Cont.Tokens.size(); ++i) {
+    for (unsigned i = 1, e = Cont.Tokens.size(); i != e; ++i) {
       bool InsertNewLine = Cont.Tokens[i].NewlinesBefore > 0;
       if (!InsertNewLine) {
         unsigned NoBreak = numLines(State, false, i + 1,
