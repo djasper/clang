@@ -23,10 +23,14 @@ import lldb
 
 def __lldb_init_module(debugger, internal_dict):
 	debugger.HandleCommand("type summary add -F ClangDataFormat.SourceLocation_summary clang::SourceLocation")
+	debugger.HandleCommand("type summary add -F ClangDataFormat.QualType_summary clang::QualType")
 	debugger.HandleCommand("type summary add -F ClangDataFormat.StringRef_summary llvm::StringRef")
 
 def SourceLocation_summary(srcloc, internal_dict):
 	return SourceLocation(srcloc).summary()
+
+def QualType_summary(qualty, internal_dict):
+	return QualType(qualty).summary()
 
 def StringRef_summary(strref, internal_dict):
 	return StringRef(strref).summary()
@@ -34,9 +38,13 @@ def StringRef_summary(strref, internal_dict):
 class SourceLocation(object):
 	def __init__(self, srcloc):
 		self.srcloc = srcloc
+		self.ID = srcloc.GetChildAtIndex(0).GetValueAsUnsigned()
 	
 	def offset(self):
 		return getValueFromExpression(self.srcloc, ".getOffset()").GetValueAsUnsigned()
+
+	def isInvalid(self):
+		return self.ID == 0
 
 	def isMacro(self):
 		return getValueFromExpression(self.srcloc, ".isMacroID()").GetValueAsUnsigned()
@@ -49,10 +57,25 @@ class SourceLocation(object):
 		return print_str.GetSummary()
 
 	def summary(self):
-		desc = "(offset: %d, %s)" % (self.offset(), "macro" if self.isMacro() else "file")
+		if self.isInvalid():
+			return "<invalid loc>"
 		srcmgr_path = findObjectExpressionPath("clang::SourceManager", lldb.frame)
 		if srcmgr_path:
-			desc = "%s (offset: %d, %s, %s)" % (self.getPrint(srcmgr_path), self.offset(), "macro" if self.isMacro() else "file", "local" if self.isLocal(srcmgr_path) else "loaded")
+			return "%s (offset: %d, %s, %s)" % (self.getPrint(srcmgr_path), self.offset(), "macro" if self.isMacro() else "file", "local" if self.isLocal(srcmgr_path) else "loaded")
+		return "(offset: %d, %s)" % (self.offset(), "macro" if self.isMacro() else "file")
+
+class QualType(object):
+	def __init__(self, qualty):
+		self.qualty = qualty
+
+	def getAsString(self):
+		std_str = getValueFromExpression(self.qualty, ".getAsString()")
+		return std_str.GetSummary()
+
+	def summary(self):
+		desc = self.getAsString()
+		if desc == '"NULL TYPE"':
+			return "<NULL TYPE>"
 		return desc
 
 class StringRef(object):

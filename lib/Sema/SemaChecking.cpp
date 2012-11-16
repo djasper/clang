@@ -3922,7 +3922,11 @@ struct IntRange {
       unsigned NumPositive = Enum->getNumPositiveBits();
       unsigned NumNegative = Enum->getNumNegativeBits();
 
-      return IntRange(std::max(NumPositive, NumNegative), NumNegative == 0);
+      if (NumNegative == 0)
+        return IntRange(NumPositive, true/*NonNegative*/);
+      else
+        return IntRange(std::max(NumPositive + 1, NumNegative),
+                        false/*NonNegative*/);
     }
 
     const BuiltinType *BT = cast<BuiltinType>(T);
@@ -4385,7 +4389,7 @@ static void DiagnoseOutOfRangeComparison(Sema &S, BinaryOperator *E,
       // Check to see if the constant is equivalent to a negative value
       // cast to CommonT.
       if (S.Context.getIntWidth(ConstantT) == S.Context.getIntWidth(CommonT) &&
-          Value.isNegative() && Value.getMinSignedBits() < OtherWidth)
+          Value.isNegative() && Value.getMinSignedBits() <= OtherWidth)
         return;
       // The constant value rests between values that OtherT can represent after
       // conversion.  Relational comparison still works, but equality

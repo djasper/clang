@@ -311,6 +311,7 @@ void test7(unsigned long other) {
   (void)((int)other != (unsigned long)(0x00000000ffffffff)); // expected-warning{{true}}
   (void)((int)other != (unsigned long)(0x000000000fffffff));
   (void)((int)other < (unsigned long)(0x00000000ffffffff));  // expected-warning{{different signs}}
+  (void)((int)other == (unsigned)(0x800000000));
 
   // Common unsigned, other unsigned, constant signed
   (void)((unsigned long)other != (int)(0xffffffff));  // expected-warning{{different signs}}
@@ -336,4 +337,14 @@ void test7(unsigned long other) {
   (void)((unsigned char)other != (unsigned short)(0xff));
   (void)((unsigned char)other != (unsigned short)(0x100)); // expected-warning{{true}}
   (void)((unsigned short)other != (unsigned char)(0xff));
+}
+
+void test8(int x) {
+  enum E {
+    Negative = -1,
+    Positive = 1
+  };
+
+  (void)((E)x == 1);
+  (void)((E)x == -1);
 }
