@@ -188,7 +188,12 @@ private:
   bool spaceRequiredBetween(Token Left, Token Right) {
     if (Left.is(tok::exclaim))
       return false;
-    if (Left.is(tok::l_square) || Right.is(tok::l_square) || Right.is(tok::r_square))
+    if (Left.is(tok::less) || Right.is(tok::greater) || Right.is(tok::less))
+      return false;
+    if (Left.is(tok::amp) || Left.is(tok::star))
+      return false;
+    if (Left.is(tok::l_square) || Right.is(tok::l_square) ||
+        Right.is(tok::r_square))
       return false;
     if (Left.is(tok::period) || Right.is(tok::period))
       return false;
