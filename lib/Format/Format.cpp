@@ -6,12 +6,14 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-//  This is EXPERIMENTAL code under heavy development. It is not in a state yet,
-//  where it can be used to format real code.
-//
-//  Implements Format.h.
-//
+///
+/// \file
+/// \brief This file implements functions declared in Format.h. This will be
+/// split into separate files as we go.
+///
+/// This is EXPERIMENTAL code under heavy development. It is not in a state yet,
+/// where it can be used to format real code.
+///
 //===----------------------------------------------------------------------===//
 
 #include "clang/Format/Format.h"
@@ -19,35 +21,39 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 
-#include "ContinuationParser.h"
+#include "UnwrappedLineParser.h"
 
 namespace clang {
 namespace format {
 
 using llvm::MutableArrayRef;
 
-class ContinuationFormatter {
+class UnwrappedLineFormatter {
 public:
-  ContinuationFormatter(SourceManager &SourceMgr,
-                        const Continuation &Cont,
-                        tooling::Replacements &Replaces)
-      : SourceMgr(SourceMgr), Cont(Cont), Replaces(Replaces) {}
+  UnwrappedLineFormatter(SourceManager &SourceMgr,
+                         const UnwrappedLine &Line,
+                         tooling::Replacements &Replaces)
+      : SourceMgr(SourceMgr), Line(Line), Replaces(Replaces) {}
 
   void format() {
-    addNewline(Cont.Tokens[0], Cont.Level);
+    addNewline(Line.Tokens[0], Line.Level);
     count = 0;
     IndentState State;
     State.ParenLevel = 0;
-    State.Column = Cont.Level * 2 + Cont.Tokens[0].Tok.getLength();
+    State.Column = Line.Level * 2 + Line.Tokens[0].Tok.getLength();
 
-    State.UsedIndent.push_back(Cont.Level * 2);
-    State.Indent.push_back(Cont.Level * 2 + 4);
-    for (unsigned i = 1, e = Cont.Tokens.size(); i != e; ++i) {
-      bool InsertNewLine = Cont.Tokens[i].NewlinesBefore > 0;
+    State.UsedIndent.push_back(Line.Level * 2);
+    State.Indent.push_back(Line.Level * 2 + 4);
+
+    // Start iterating at 1 as we have correctly formatted of Token #0 above.
+    for (unsigned i = 1, n = Line.Tokens.size(); i != n; ++i) {
+      //bool InsertNewLine = Line.Tokens[i].NewlinesBefore > 0;
+      bool InsertNewLine = false;
       if (!InsertNewLine) {
         unsigned NoBreak = numLines(State, false, i + 1,
-                               Cont.Tokens.size()-1, 100000);
-        unsigned Break = numLines(State, true, i + 1, Cont.Tokens.size()-1, 100000);
+                                    Line.Tokens.size(), 100000);
+        unsigned Break = numLines(State, true, i + 1,
+                                  Line.Tokens.size(), 100000);
         InsertNewLine = Break < NoBreak;
       }
       addToken(i, InsertNewLine, false, State);
@@ -55,7 +61,7 @@ public:
   }
 
 private:
-  /// \brief The current state when indenting a continuation.
+  /// \brief The current state when indenting a unwrapped line.
   ///
   /// As the indenting tries different combinations this is copied by value.
   struct IndentState {
@@ -83,32 +89,33 @@ private:
     std::vector<unsigned> UsedIndent;
   };
 
-  // Append the token at 'Index' to the IndentState 'State'.
+  /// Append the token at \p Index to \p State.
   void addToken(unsigned Index, bool Newline, bool DryRun, IndentState &State) {
-    if (Cont.Tokens[Index].Tok.getKind() == tok::l_paren) {
+    if (Line.Tokens[Index].Tok.getKind() == tok::l_paren) {
       State.UsedIndent.push_back(State.UsedIndent.back());
       State.Indent.push_back(State.UsedIndent.back() + 4);
       ++State.ParenLevel;
     }
     if (Newline) {
       if (!DryRun)
-        replaceWhitespace(Cont.Tokens[Index], 1, State.Indent[State.ParenLevel]);
+        replaceWhitespace(Line.Tokens[Index], 1,
+                          State.Indent[State.ParenLevel]);
       State.Column = State.Indent[State.ParenLevel] +
-          Cont.Tokens[Index].Tok.getLength();
+          Line.Tokens[Index].Tok.getLength();
       State.UsedIndent[State.ParenLevel] = State.Indent[State.ParenLevel];
     } else {
-      bool Space = spaceRequiredBetween(Cont.Tokens[Index - 1].Tok,
-                                        Cont.Tokens[Index].Tok);
-      //if (Cont.Tokens[Index].NewlinesBefore == 0)
-      //  Space = Cont.Tokens[Index].WhiteSpaceLength > 0;
+      bool Space = spaceRequiredBetween(Line.Tokens[Index - 1].Tok,
+                                        Line.Tokens[Index].Tok);
+      //if (Line.Tokens[Index].NewlinesBefore == 0)
+      //  Space = Line.Tokens[Index].WhiteSpaceLength > 0;
       if (!DryRun)
-        replaceWhitespace(Cont.Tokens[Index], 0, Space ? 1 : 0);
-      if (Cont.Tokens[Index - 1].Tok.getKind() == tok::l_paren)
+        replaceWhitespace(Line.Tokens[Index], 0, Space ? 1 : 0);
+      if (Line.Tokens[Index - 1].Tok.getKind() == tok::l_paren)
         State.Indent[State.ParenLevel] = State.Column;
-      State.Column += Cont.Tokens[Index].Tok.getLength() + (Space ? 1 : 0);
+      State.Column += Line.Tokens[Index].Tok.getLength() + (Space ? 1 : 0);
     }
 
-    if (Cont.Tokens[Index].Tok.getKind() == tok::r_paren) {
+    if (Line.Tokens[Index].Tok.getKind() == tok::r_paren) {
       // FIXME: We should be able to handle this kind of code.
       assert(State.ParenLevel != 0 && "Unexpected ')'.");
       --State.ParenLevel;
@@ -122,13 +129,13 @@ private:
   }
 
   /// \brief Calculate the number of lines needed to format the remaining part
-  /// of the continuation.
+  /// of the unwrapped line.
   ///
   /// Assumes the formatting of the \c Token until \p EndIndex has led to
   /// the \c IndentState \p State. If \p NewLine is set, a new line will be
   /// added after the previous token.
   ///
-  /// \param EndIndex is the last token belonging to the continuation.
+  /// \param EndIndex is the last token belonging to the unwrapped line.
   ///
   /// \param StopAt is used for optimization. If we can determine that we'll
   /// definitely need at least \p StopAt additional lines, we already know of a
@@ -137,7 +144,7 @@ private:
                     unsigned EndIndex, unsigned StopAt) {
     count++;
 
-    // We are at the end of the continuation, so we don't need any more lines.
+    // We are at the end of the unwrapped line, so we don't need any more lines.
     if (Index > EndIndex)
       return 0;
 
@@ -153,7 +160,7 @@ private:
       return 10000;
 
     unsigned NoBreak = numLines(State, false, Index + 1, EndIndex, StopAt);
-    if (!canBreakAfter(Cont.Tokens[Index - 1].Tok))
+    if (!canBreakAfter(Line.Tokens[Index - 1].Tok))
       return NoBreak + (NewLine ? 1 : 0);
     unsigned Break = numLines(State, true, Index + 1, EndIndex,
                          std::min(StopAt, NoBreak));
@@ -179,7 +186,10 @@ private:
   }
 
   bool spaceRequiredBetween(Token Left, Token Right) {
-
+    if (Left.is(tok::exclaim))
+      return false;
+    if (Left.is(tok::l_square) || Right.is(tok::l_square) || Right.is(tok::r_square))
+      return false;
     if (Left.is(tok::period) || Right.is(tok::period))
       return false;
     if (Left.is(tok::colon) || Right.is(tok::colon))
@@ -209,32 +219,50 @@ private:
   }
 
   SourceManager &SourceMgr;
-  const Continuation &Cont;
+  const UnwrappedLine &Line;
   tooling::Replacements &Replaces;
   unsigned int count;
 };
 
-class Formatter : public ContinuationConsumer {
+class Formatter : public UnwrappedLineConsumer {
 public:
   Formatter(Lexer &Lex, SourceManager &SourceMgr,
             const std::vector<CodeRange> &Ranges)
-      : Lex(Lex), SourceMgr(SourceMgr) {}
+      : Lex(Lex), SourceMgr(SourceMgr), Ranges(Ranges) {}
 
   tooling::Replacements format() {
-    ContinuationParser Parser(Lex, SourceMgr, *this);
+    UnwrappedLineParser Parser(Lex, SourceMgr, *this);
     Parser.parse();
     return Replaces;
   }
 
 private:
-  virtual void formatContinuation(const Continuation &TheCont) {
-    ContinuationFormatter Formatter(SourceMgr, TheCont, Replaces);
-    Formatter.format();
+  virtual void formatUnwrappedLine(const UnwrappedLine &TheLine) {
+    if (TheLine.Tokens.size() == 0)
+      return;
+
+    unsigned LineBegin = SourceMgr.getFileOffset(
+        TheLine.Tokens.front().Tok.getLocation());
+    // FIXME: Add length of last token.
+    unsigned LineEnd = SourceMgr.getFileOffset(
+        TheLine.Tokens.back().Tok.getLocation());
+
+    for (unsigned i = 0, e = Ranges.size(); i != e; ++i) {
+      unsigned RangeBegin = Ranges[i].Offset;
+      unsigned RangeEnd = RangeBegin + Ranges[i].Length;
+      if (LineEnd < RangeBegin || LineBegin > RangeEnd)
+        continue;
+
+      UnwrappedLineFormatter Formatter(SourceMgr, TheLine, Replaces);
+      Formatter.format();
+      return;
+    }
   }
 
   Lexer &Lex;
   SourceManager &SourceMgr;
   tooling::Replacements Replaces;
+  std::vector<CodeRange> Ranges;
 };
 
 tooling::Replacements reformat(Lexer &Lex, SourceManager &SourceMgr,

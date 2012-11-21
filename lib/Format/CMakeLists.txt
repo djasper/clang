@@ -1,7 +1,7 @@
 set(LLVM_LINK_COMPONENTS support)
 
 add_clang_library(clangFormat
-  ContinuationParser.cpp
+  UnwrappedLineParser.cpp
   Format.cpp
   )
 

@@ -6,12 +6,13 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-//  This is EXPERIMENTAL code under heavy development. It is not in a state yet,
-//  where it can be used to format real code.
-//
-//  Various functions to configurably format source code.
-//
+///
+/// \file
+/// Various functions to configurably format source code.
+///
+/// This is EXPERIMENTAL code under heavy development. It is not in a state yet,
+/// where it can be used to format real code.
+///
 //===----------------------------------------------------------------------===//
 
 #ifndef LLVM_CLANG_FORMAT_FORMAT_H_

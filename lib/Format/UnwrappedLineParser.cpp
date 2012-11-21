@@ -1,4 +1,4 @@
-//===--- ContinuationParser.cpp - Format C++ code -------------------------===//
+//===--- UnwrappedLineParser.cpp - Format C++ code ------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,31 +6,35 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-//  This is EXPERIMENTAL code under heavy development. It is not in a state yet,
-//  where it can be used to format real code.
-//
+///
+/// \file
+/// \brief This file contains the implementation of the UnwrappedLineParser,
+/// which turns a stream of tokens into UnwrappedLines.
+///
+/// This is EXPERIMENTAL code under heavy development. It is not in a state yet,
+/// where it can be used to format real code.
+///
 //===----------------------------------------------------------------------===//
 
-#include "ContinuationParser.h"
+#include "UnwrappedLineParser.h"
 
 #include "llvm/Support/raw_ostream.h"
 
 namespace clang {
 namespace format {
 
-ContinuationParser::ContinuationParser(Lexer &Lex, SourceManager &SourceMgr,
-                                       ContinuationConsumer &Callback)
+UnwrappedLineParser::UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
+                                         UnwrappedLineConsumer &Callback)
     : Lex(Lex), SourceMgr(SourceMgr), Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
 
-void ContinuationParser::parse() {
+void UnwrappedLineParser::parse() {
   parseToken();
   parseLevel();
 }
 
-void ContinuationParser::parseLevel() {
+void UnwrappedLineParser::parseLevel() {
   do {
     switch(FormatTok.Tok.getKind()) {
       case tok::hash:
@@ -41,7 +45,7 @@ void ContinuationParser::parseLevel() {
         break;
       case tok::l_brace:
         parseBlock();
-        addContinuation();
+        addUnwrappedLine();
         break;
       case tok::r_brace:
         return;
@@ -52,48 +56,63 @@ void ContinuationParser::parseLevel() {
   } while (!eof());
 }
 
-void ContinuationParser::parseBlock() {
+void UnwrappedLineParser::parseBlock() {
   nextToken();
-  addContinuation();
-  ++Cont.Level;
+
+  // FIXME: Remove this hack to handle namespaces.
+  bool IsNamespace = false;
+  if (Line.Tokens.size() > 0) {  
+    StringRef Data(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
+        Line.Tokens[0].Tok.getLength());
+    IsNamespace = Data == "namespace";
+  }
+
+  addUnwrappedLine();
+
+  if (!IsNamespace)
+    ++Line.Level;
   parseLevel();
-  --Cont.Level;
-  if (FormatTok.Tok.getKind() != tok::r_brace) abort();
+  if (!IsNamespace)
+    --Line.Level;
+  assert(FormatTok.Tok.is(tok::r_brace) && "expected '}'");
   nextToken();
   if (FormatTok.Tok.getKind() == tok::semi)
     nextToken();
 }
 
-void ContinuationParser::parsePPDirective() {
-  while (!eof()) {
-    nextToken();
-    if (FormatTok.NewlinesBefore > 0) return;
-  }
-}
-
-void ContinuationParser::parseComment() {
+void UnwrappedLineParser::parsePPDirective() {
   while (!eof()) {
     nextToken();
     if (FormatTok.NewlinesBefore > 0) {
-      addContinuation();
+      addUnwrappedLine();
       return;
     }
   }
 }
 
-void ContinuationParser::parseStatement() {
+void UnwrappedLineParser::parseComment() {
+  while (!eof()) {
+    nextToken();
+    if (FormatTok.NewlinesBefore > 0) {
+      addUnwrappedLine();
+      return;
+    }
+  }
+}
+
+void UnwrappedLineParser::parseStatement() {
   do {
     switch (FormatTok.Tok.getKind()) {
       case tok::semi:
         nextToken();
-        addContinuation();
+        addUnwrappedLine();
         return;
       case tok::l_paren:
         parseParens();
         break;
       case tok::l_brace:
         parseBlock();
-        addContinuation();
+        addUnwrappedLine();
         return;
       case tok::raw_identifier:
         if (tokenText() == "if") {
@@ -107,7 +126,7 @@ void ContinuationParser::parseStatement() {
   } while (!eof());
 } 
 
-void ContinuationParser::parseParens() {
+void UnwrappedLineParser::parseParens() {
   assert(FormatTok.Tok.getKind() == tok::l_paren && "'(' expected.");
   nextToken();
   do {
@@ -125,54 +144,54 @@ void ContinuationParser::parseParens() {
   } while (!eof());
 }
 
-void ContinuationParser::parseIfThenElse() {
+void UnwrappedLineParser::parseIfThenElse() {
   assert(FormatTok.Tok.getKind() == tok::raw_identifier &&
          "Identifier expected");
   nextToken();
   parseParens();
-  bool NeedsContinuation = false;
+  bool NeedsUnwrappedLine = false;
   if (FormatTok.Tok.getKind() == tok::l_brace) {
     parseBlock();
-    NeedsContinuation = true;
+    NeedsUnwrappedLine = true;
   } else {
-    addContinuation();
-    ++Cont.Level;
+    addUnwrappedLine();
+    ++Line.Level;
     parseStatement();
-    --Cont.Level;
+    --Line.Level;
   }
   if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "else") {
     nextToken();
     if (FormatTok.Tok.getKind() == tok::l_brace) {
       parseBlock();
-      addContinuation();
+      addUnwrappedLine();
     } else {
-      addContinuation();
-      ++Cont.Level;
+      addUnwrappedLine();
+      ++Line.Level;
       parseStatement();
-      --Cont.Level;
+      --Line.Level;
     }
-  } else if (NeedsContinuation) {
-    addContinuation();
+  } else if (NeedsUnwrappedLine) {
+    addUnwrappedLine();
   }
 }
 
-void ContinuationParser::addContinuation() {
-  Callback.formatContinuation(Cont);
-  Cont.Tokens.clear();
+void UnwrappedLineParser::addUnwrappedLine() {
+  Callback.formatUnwrappedLine(Line);
+  Line.Tokens.clear();
 }
 
-bool ContinuationParser::eof() const {
+bool UnwrappedLineParser::eof() const {
   return FormatTok.Tok.getKind() == tok::eof;
 }
 
-void ContinuationParser::nextToken() {
+void UnwrappedLineParser::nextToken() {
   if (eof())
     return;
-  Cont.Tokens.push_back(FormatTok);
+  Line.Tokens.push_back(FormatTok);
   parseToken();
 }
 
-void ContinuationParser::parseToken() {
+void UnwrappedLineParser::parseToken() {
   FormatTok = FormatToken();
   Lex.LexFromRawLexer(FormatTok.Tok);
   FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation();
@@ -185,12 +204,13 @@ void ContinuationParser::parseToken() {
       ++FormatTok.NewlinesBefore;
     FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
 
-    if (eof()) return;
+    if (eof())
+      return;
     Lex.LexFromRawLexer(FormatTok.Tok);
   }
 }
 
-StringRef ContinuationParser::tokenText() {
+StringRef UnwrappedLineParser::tokenText() {
   StringRef Data(SourceMgr.getCharacterData(FormatTok.Tok.getLocation()),
                  FormatTok.Tok.getLength());
   return Data;

@@ -1,4 +1,4 @@
-//===--- ContinuationParser.cpp - Format C++ code -------------------------===//
+//===--- UnwrappedLineParser.cpp - Format C++ code ------------------------===//
 //
 //                     The LLVM Compiler Infrastructure
 //
@@ -6,14 +6,18 @@
 // License. See LICENSE.TXT for details.
 //
 //===----------------------------------------------------------------------===//
-//
-//  This is EXPERIMENTAL code under heavy development. It is not in a state yet,
-//  where it can be used to format real code.
-//
+///
+/// \file
+/// \brief This file contains the declaration of the UnwrappedLineParser,
+/// which turns a stream of tokens into UnwrappedLines.
+///
+/// This is EXPERIMENTAL code under heavy development. It is not in a state yet,
+/// where it can be used to format real code.
+///
 //===----------------------------------------------------------------------===//
 
-#ifndef LLVM_CLANG_FORMAT_CONTINUATION_PARSER_H
-#define LLVM_CLANG_FORMAT_CONTINUATION_PARSER_H
+#ifndef LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
+#define LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
 
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
@@ -46,31 +50,31 @@ struct FormatToken {
   unsigned WhiteSpaceLength;
 };
 
-/// \brief A continuation is a sequence of \c Token, that we would like to put
-/// on a single line if there was no column limit.
+/// \brief An unwrapped line is a sequence of \c Token, that we would like to
+/// put on a single line if there was no column limit.
 ///
-/// This is used as a main interface between the \c ContinuationParser and the
-/// \c ContinuationFormatter. The key property is that changing the formatting
-/// within a continuation does not affect any other continuation.
-struct Continuation {
-  Continuation() : Level(0) {}
+/// This is used as a main interface between the \c UnwrappedLineParser and the
+/// \c UnwrappedLineFormatter. The key property is that changing the formatting
+/// within an unwrapped line does not affect any other unwrapped lines.
+struct UnwrappedLine {
+  UnwrappedLine() : Level(0) {}
 
-  /// \brief The \c Token comprising this continuation.
-  std::vector<FormatToken> Tokens;
+  /// \brief The \c Token comprising this \c UnwrappedLine.
+  SmallVector<FormatToken, 16> Tokens;
 
-  /// \brief The indent level of the \c Continuation.
+  /// \brief The indent level of the \c UnwrappedLine.
   unsigned Level;
 };
 
-class ContinuationConsumer {
+class UnwrappedLineConsumer {
 public:
-  virtual void formatContinuation(const Continuation &Cont) = 0;
+  virtual void formatUnwrappedLine(const UnwrappedLine &Line) = 0;
 };
 
-class ContinuationParser {
+class UnwrappedLineParser {
 public:
-  ContinuationParser(Lexer &Lex, SourceManager &SourceMgr,
-                     ContinuationConsumer &Callback);
+  UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
+                     UnwrappedLineConsumer &Callback);
 
   void parse();
 
@@ -82,7 +86,7 @@ private:
   void parseStatement();
   void parseParens();
   void parseIfThenElse();
-  void addContinuation();
+  void addUnwrappedLine();
   bool eof() const;
   void nextToken();
   void parseToken();
@@ -90,15 +94,15 @@ private:
   /// Returns the text of \c FormatTok.
   StringRef tokenText();
 
-  Continuation Cont;
+  UnwrappedLine Line;
   FormatToken FormatTok;
 
   Lexer &Lex;
   SourceManager &SourceMgr;
-  ContinuationConsumer &Callback;
+  UnwrappedLineConsumer &Callback;
 };
 
 } // end namespace format
 } // end namespace clang
 
-#endif // LLVM_CLANG_FORMAT_CONTINUATION_PARSER_H
+#endif // LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
