@@ -199,9 +199,7 @@ void UnwrappedLineParser::parseToken() {
   // Consume and record whitespace until we find a significant
   // token.
   while (FormatTok.Tok.getKind() == tok::unknown) {
-    StringRef Data = tokenText();
-    if (std::find(Data.begin(), Data.end(), '\n') != Data.end())
-      ++FormatTok.NewlinesBefore;
+    FormatTok.NewlinesBefore += tokenText().count('\n');
     FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
 
     if (eof())

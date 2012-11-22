@@ -28,12 +28,24 @@ namespace format {
 
 using llvm::MutableArrayRef;
 
+struct FormatConfig {
+  unsigned NumColumns;
+  unsigned NumKeepEmptyLines;
+  unsigned PenaltyExtraLine;
+  unsigned PenaltyIndentLevel;
+};
+
 class UnwrappedLineFormatter {
 public:
   UnwrappedLineFormatter(SourceManager &SourceMgr,
                          const UnwrappedLine &Line,
                          tooling::Replacements &Replaces)
-      : SourceMgr(SourceMgr), Line(Line), Replaces(Replaces) {}
+      : SourceMgr(SourceMgr), Line(Line), Replaces(Replaces) {
+    Config.NumColumns = 80;
+    Config.NumKeepEmptyLines = 1;
+    Config.PenaltyExtraLine = 100;
+    Config.PenaltyIndentLevel = 1;
+  }
 
   void format() {
     addNewline(Line.Tokens[0], Line.Level);
@@ -50,14 +62,15 @@ public:
       //bool InsertNewLine = Line.Tokens[i].NewlinesBefore > 0;
       bool InsertNewLine = false;
       if (!InsertNewLine) {
-        unsigned NoBreak = numLines(State, false, i + 1,
-                                    Line.Tokens.size(), 100000);
-        unsigned Break = numLines(State, true, i + 1,
-                                  Line.Tokens.size(), 100000);
+        unsigned NoBreak =
+            tryFormat(State, false, i + 1, Line.Tokens.size(), UINT_MAX);
+        unsigned Break =
+            tryFormat(State, true, i + 1, Line.Tokens.size(), UINT_MAX);
         InsertNewLine = Break < NoBreak;
       }
       addToken(i, InsertNewLine, false, State);
     }
+    //llvm::errs() << count << "\n";
   }
 
 private:
@@ -100,8 +113,8 @@ private:
       if (!DryRun)
         replaceWhitespace(Line.Tokens[Index], 1,
                           State.Indent[State.ParenLevel]);
-      State.Column = State.Indent[State.ParenLevel] +
-          Line.Tokens[Index].Tok.getLength();
+      State.Column =
+          State.Indent[State.ParenLevel] + Line.Tokens[Index].Tok.getLength();
       State.UsedIndent[State.ParenLevel] = State.Indent[State.ParenLevel];
     } else {
       bool Space = spaceRequiredBetween(Line.Tokens[Index - 1].Tok,
@@ -123,9 +136,10 @@ private:
     }
   }
 
-  bool canBreakAfter(Token tok) {
-    return tok.getKind() == tok::comma || tok.getKind() == tok::semi ||
-        tok.getKind() == tok::l_paren;
+  bool canBreakBetween(const FormatToken &Left, const FormatToken &Right) {
+    return Left.Tok.is(tok::comma) || Left.Tok.is(tok::semi) ||
+      Left.Tok.is(tok::equal) ||
+      (Left.Tok.is(tok::l_paren) && !Right.Tok.is(tok::r_paren));
   }
 
   /// \brief Calculate the number of lines needed to format the remaining part
@@ -140,8 +154,8 @@ private:
   /// \param StopAt is used for optimization. If we can determine that we'll
   /// definitely need at least \p StopAt additional lines, we already know of a
   /// better solution.
-  unsigned numLines(IndentState State, bool NewLine, unsigned Index,
-                    unsigned EndIndex, unsigned StopAt) {
+  unsigned tryFormat(IndentState State, bool NewLine, unsigned Index,
+                     unsigned EndIndex, unsigned StopAt) {
     count++;
 
     // We are at the end of the unwrapped line, so we don't need any more lines.
@@ -152,29 +166,34 @@ private:
     if (NewLine)
       --StopAt;
 
-    // Exceeding 80 columns is bad.
-    if (State.Column > 80)
-      return 10000;
+    // Exceeding column limit is bad.
+    if (State.Column > Config.NumColumns)
+      return UINT_MAX;
 
     if (StopAt < 1)
-      return 10000;
+      return UINT_MAX;
 
-    unsigned NoBreak = numLines(State, false, Index + 1, EndIndex, StopAt);
-    if (!canBreakAfter(Line.Tokens[Index - 1].Tok))
-      return NoBreak + (NewLine ? 1 : 0);
-    unsigned Break = numLines(State, true, Index + 1, EndIndex,
-                         std::min(StopAt, NoBreak));
-    return std::min(NoBreak, Break) + (NewLine ? 1 : 0);
+    int CurrentPenalty = 0;
+    if (NewLine)
+      CurrentPenalty += Config.PenaltyExtraLine +
+        Config.PenaltyIndentLevel * State.ParenLevel;
+
+    unsigned NoBreak = tryFormat(State, false, Index + 1, EndIndex, StopAt);
+    if (Index == EndIndex || !canBreakBetween(Line.Tokens[Index - 1],
+                                              Line.Tokens[Index]))
+      return NoBreak + CurrentPenalty;
+    unsigned Break =
+        tryFormat(State, true, Index + 1, EndIndex, std::min(StopAt, NoBreak));
+    return std::min(NoBreak, Break) + CurrentPenalty;
   }
 
   /// \brief Replaces the whitespace in front of \p Tok. Only call once for
   /// each \c FormatToken.
   void replaceWhitespace(const FormatToken &Tok, unsigned NewLines,
                          unsigned Spaces) {
-    Replaces.insert(tooling::Replacement(SourceMgr, Tok.WhiteSpaceStart,
-                                         Tok.WhiteSpaceLength,
-                                         std::string(NewLines, '\n') +
-                                         std::string(Spaces, ' ')));
+    Replaces.insert(tooling::Replacement(
+        SourceMgr, Tok.WhiteSpaceStart, Tok.WhiteSpaceLength,
+        std::string(NewLines, '\n') + std::string(Spaces, ' ')));
   }
 
   bool isIfForOrWhile(Token Tok) {
@@ -203,6 +222,8 @@ private:
       return false;
     if (Left.is(tok::l_paren))
       return false;
+    if (Left.is(tok::hash))
+      return false;
     if (Right.is(tok::r_paren) || Right.is(tok::semi) || Right.is(tok::comma))
       return false;
     if (Right.is(tok::l_paren)) {
@@ -212,10 +233,11 @@ private:
   }
 
   /// \brief Add a new line and the required indent before \p Token.
-  void addNewline(const FormatToken &Token, unsigned Level) {
+  void addNewline(const FormatToken &Token, unsigned Level, unsigned Num = 1) {
       //unsigned Index, unsigned Level) {
     if (Token.WhiteSpaceStart.isValid()) {
-      unsigned Newlines = Token.NewlinesBefore;
+      unsigned Newlines = std::min(Token.NewlinesBefore,
+                                   Config.NumKeepEmptyLines + 1);
       unsigned Offset = SourceMgr.getFileOffset(Token.WhiteSpaceStart);
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
@@ -227,6 +249,7 @@ private:
   const UnwrappedLine &Line;
   tooling::Replacements &Replaces;
   unsigned int count;
+  FormatConfig Config;
 };
 
 class Formatter : public UnwrappedLineConsumer {
@@ -246,11 +269,11 @@ private:
     if (TheLine.Tokens.size() == 0)
       return;
 
-    unsigned LineBegin = SourceMgr.getFileOffset(
-        TheLine.Tokens.front().Tok.getLocation());
+    unsigned LineBegin =
+        SourceMgr.getFileOffset(TheLine.Tokens.front().Tok.getLocation());
     // FIXME: Add length of last token.
-    unsigned LineEnd = SourceMgr.getFileOffset(
-        TheLine.Tokens.back().Tok.getLocation());
+    unsigned LineEnd =
+        SourceMgr.getFileOffset(TheLine.Tokens.back().Tok.getLocation());
 
     for (unsigned i = 0, e = Ranges.size(); i != e; ++i) {
       unsigned RangeBegin = Ranges[i].Offset;
