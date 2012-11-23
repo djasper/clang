@@ -114,11 +114,17 @@ void UnwrappedLineParser::parseStatement() {
         parseBlock();
         addUnwrappedLine();
         return;
-      case tok::raw_identifier:
-        if (tokenText() == "if") {
+      case tok::raw_identifier: {
+        StringRef Text = tokenText();
+        if (Text == "if") {
           parseIfThenElse();
           return;
         }
+        if (Text == "public" || Text == "protected" || Text == "private") {
+          parseAccessSpecifier();
+          return;
+        }
+      }
       default:
         nextToken();
         break;
@@ -145,8 +151,7 @@ void UnwrappedLineParser::parseParens() {
 }
 
 void UnwrappedLineParser::parseIfThenElse() {
-  assert(FormatTok.Tok.getKind() == tok::raw_identifier &&
-         "Identifier expected");
+  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
   nextToken();
   parseParens();
   bool NeedsUnwrappedLine = false;
@@ -173,6 +178,15 @@ void UnwrappedLineParser::parseIfThenElse() {
   } else if (NeedsUnwrappedLine) {
     addUnwrappedLine();
   }
+}
+
+void UnwrappedLineParser::parseAccessSpecifier() {
+  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  nextToken();
+  nextToken();
+  --Line.Level;
+  addUnwrappedLine();
+  ++Line.Level;
 }
 
 void UnwrappedLineParser::addUnwrappedLine() {

@@ -28,7 +28,8 @@ namespace format {
 /// \brief A wrapper around a \c Token storing information about the
 /// whitespace characters preceeding it.
 struct FormatToken {
-  FormatToken() : NewlinesBefore(0), WhiteSpaceLength(0) {}
+  FormatToken() : NewlinesBefore(0), WhiteSpaceLength(0) {
+  }
 
   /// \brief The \c Token.
   Token Tok;
@@ -57,7 +58,8 @@ struct FormatToken {
 /// \c UnwrappedLineFormatter. The key property is that changing the formatting
 /// within an unwrapped line does not affect any other unwrapped lines.
 struct UnwrappedLine {
-  UnwrappedLine() : Level(0) {}
+  UnwrappedLine() : Level(0) {
+  }
 
   /// \brief The \c Token comprising this \c UnwrappedLine.
   SmallVector<FormatToken, 16> Tokens;
@@ -74,7 +76,7 @@ public:
 class UnwrappedLineParser {
 public:
   UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
-                     UnwrappedLineConsumer &Callback);
+                      UnwrappedLineConsumer &Callback);
 
   void parse();
 
@@ -86,6 +88,7 @@ private:
   void parseStatement();
   void parseParens();
   void parseIfThenElse();
+  void parseAccessSpecifier();
   void addUnwrappedLine();
   bool eof() const;
   void nextToken();

@@ -35,6 +35,10 @@ struct FormatConfig {
   unsigned PenaltyIndentLevel;
 };
 
+struct TokenAnnotation {
+  bool SpaceRequiredBefore;
+};
+
 class UnwrappedLineFormatter {
 public:
   UnwrappedLineFormatter(SourceManager &SourceMgr,
@@ -48,6 +52,7 @@ public:
   }
 
   void format() {
+    analyzeTokens();
     addNewline(Line.Tokens[0], Line.Level);
     count = 0;
     IndentState State;
@@ -117,8 +122,7 @@ private:
           State.Indent[State.ParenLevel] + Line.Tokens[Index].Tok.getLength();
       State.UsedIndent[State.ParenLevel] = State.Indent[State.ParenLevel];
     } else {
-      bool Space = spaceRequiredBetween(Line.Tokens[Index - 1].Tok,
-                                        Line.Tokens[Index].Tok);
+      bool Space = Annotations[Index].SpaceRequiredBefore;
       //if (Line.Tokens[Index].NewlinesBefore == 0)
       //  Space = Line.Tokens[Index].WhiteSpaceLength > 0;
       if (!DryRun)
@@ -134,6 +138,24 @@ private:
       --State.ParenLevel;
       State.Indent.pop_back();
     }
+  }
+
+  void analyzeTokens() {
+    for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
+      TokenAnnotation Annotation;
+      if (i == 0)
+        Annotation.SpaceRequiredBefore = false; 
+      else if (i == e - 1 && Line.Tokens[i].Tok.is(tok::colon))
+        Annotation.SpaceRequiredBefore = false;
+      else if (i != 0)
+        Annotation.SpaceRequiredBefore =
+            spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
+      Annotations.push_back(Annotation);
+    }
+  }
+
+  bool isBinaryOperator(const FormatToken &Tok) {
+    return false;
   }
 
   bool canBreakBetween(const FormatToken &Left, const FormatToken &Right) {
@@ -156,7 +178,7 @@ private:
   /// better solution.
   unsigned tryFormat(IndentState State, bool NewLine, unsigned Index,
                      unsigned EndIndex, unsigned StopAt) {
-    count++;
+    ++count;
 
     // We are at the end of the unwrapped line, so we don't need any more lines.
     if (Index > EndIndex)
@@ -205,6 +227,8 @@ private:
   }
 
   bool spaceRequiredBetween(Token Left, Token Right) {
+    if (Left.is(tok::arrow) || Right.is(tok::arrow))
+      return false;
     if (Left.is(tok::exclaim))
       return false;
     if (Left.is(tok::less) || Right.is(tok::greater) || Right.is(tok::less))
@@ -214,11 +238,16 @@ private:
     if (Left.is(tok::l_square) || Right.is(tok::l_square) ||
         Right.is(tok::r_square))
       return false;
+    if (Left.is(tok::coloncolon) || Right.is(tok::coloncolon))
+      return false;
     if (Left.is(tok::period) || Right.is(tok::period))
       return false;
     if (Left.is(tok::colon) || Right.is(tok::colon))
-      return false;
-    if (Left.is(tok::plusplus) && Right.is(tok::raw_identifier))
+      return true;
+    if ((Left.is(tok::plusplus) && Right.is(tok::raw_identifier)) ||
+        (Left.is(tok::raw_identifier) && Right.is(tok::plusplus)) ||
+        (Left.is(tok::minusminus) && Right.is(tok::raw_identifier)) ||
+        (Left.is(tok::raw_identifier) && Right.is(tok::minusminus)))
       return false;
     if (Left.is(tok::l_paren))
       return false;
@@ -247,6 +276,7 @@ private:
 
   SourceManager &SourceMgr;
   const UnwrappedLine &Line;
+  std::vector<TokenAnnotation> Annotations;
   tooling::Replacements &Replaces;
   unsigned int count;
   FormatConfig Config;
