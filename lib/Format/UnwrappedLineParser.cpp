@@ -191,8 +191,10 @@ void UnwrappedLineParser::parseAccessSpecifier() {
 
 void UnwrappedLineParser::addUnwrappedLine() {
   // Consume trailing comments.
-  while (FormatTok.NewlinesBefore == 0 && FormatTok.Tok.is(tok::comment))
+  while (!eof() && FormatTok.NewlinesBefore == 0 &&
+         FormatTok.Tok.is(tok::comment)) {
     nextToken();
+  }
   Callback.formatUnwrappedLine(Line);
   Line.Tokens.clear();
 }
