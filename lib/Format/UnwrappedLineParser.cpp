@@ -25,7 +25,9 @@ namespace format {
 
 UnwrappedLineParser::UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
                                          UnwrappedLineConsumer &Callback)
-    : Lex(Lex), SourceMgr(SourceMgr), Callback(Callback) {
+    : Lex(Lex),
+      SourceMgr(SourceMgr),
+      Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
 
@@ -61,9 +63,9 @@ void UnwrappedLineParser::parseBlock() {
 
   // FIXME: Remove this hack to handle namespaces.
   bool IsNamespace = false;
-  if (Line.Tokens.size() > 0) {  
+  if (Line.Tokens.size() > 0) {
     StringRef Data(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
-        Line.Tokens[0].Tok.getLength());
+                   Line.Tokens[0].Tok.getLength());
     IsNamespace = Data == "namespace";
   }
 
@@ -101,6 +103,11 @@ void UnwrappedLineParser::parseComment() {
 }
 
 void UnwrappedLineParser::parseStatement() {
+  StringRef Text = tokenText();
+  if (Text == "public" || Text == "protected" || Text == "private") {
+    parseAccessSpecifier();
+    return;
+  }
   do {
     switch (FormatTok.Tok.getKind()) {
       case tok::semi:
@@ -114,17 +121,12 @@ void UnwrappedLineParser::parseStatement() {
         parseBlock();
         addUnwrappedLine();
         return;
-      case tok::raw_identifier: {
-        StringRef Text = tokenText();
+      case tok::raw_identifier:
+        Text = tokenText();
         if (Text == "if") {
           parseIfThenElse();
           return;
         }
-        if (Text == "public" || Text == "protected" || Text == "private") {
-          parseAccessSpecifier();
-          return;
-        }
-      }
       default:
         nextToken();
         break;
@@ -169,6 +171,8 @@ void UnwrappedLineParser::parseIfThenElse() {
     if (FormatTok.Tok.getKind() == tok::l_brace) {
       parseBlock();
       addUnwrappedLine();
+    } else if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "if") {
+      parseIfThenElse();
     } else {
       addUnwrappedLine();
       ++Line.Level;
@@ -215,8 +219,7 @@ void UnwrappedLineParser::parseToken() {
   Lex.LexFromRawLexer(FormatTok.Tok);
   FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation();
 
-  // Consume and record whitespace until we find a significant
-  // token.
+  // Consume and record whitespace until we find a significant token.
   while (FormatTok.Tok.getKind() == tok::unknown) {
     FormatTok.NewlinesBefore += tokenText().count('\n');
     FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
