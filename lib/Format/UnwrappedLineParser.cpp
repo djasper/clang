@@ -132,7 +132,7 @@ void UnwrappedLineParser::parseStatement() {
         break;
     }
   } while (!eof());
-} 
+}
 
 void UnwrappedLineParser::parseParens() {
   assert(FormatTok.Tok.getKind() == tok::l_paren && "'(' expected.");
@@ -188,9 +188,7 @@ void UnwrappedLineParser::parseAccessSpecifier() {
   assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
   nextToken();
   nextToken();
-  --Line.Level;
   addUnwrappedLine();
-  ++Line.Level;
 }
 
 void UnwrappedLineParser::addUnwrappedLine() {

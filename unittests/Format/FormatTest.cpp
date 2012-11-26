@@ -158,5 +158,15 @@ TEST_F(FormatTest, ElseIf) {
                "  h();");
 }
 
+TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
+  verifyFormat("class A {\n"
+               "public:\n"
+               "protected:\n"
+               "private:\n"
+               "  void f() {\n"
+               "  }\n"
+               "};");
+}
+
 } // end namespace tooling
 } // end namespace clang

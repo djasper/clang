@@ -29,6 +29,7 @@ namespace format {
 using llvm::MutableArrayRef;
 
 struct FormatConfig {
+  int AccessModifierOffset;
   unsigned NumColumns;
   unsigned NumKeepEmptyLines;
   unsigned PenaltyExtraLine;
@@ -42,6 +43,7 @@ public:
       : SourceMgr(SourceMgr),
         Line(Line),
         Replaces(Replaces) {
+    Config.AccessModifierOffset = - 2;
     Config.NumColumns = 80;
     Config.NumKeepEmptyLines = 1;
     Config.PenaltyExtraLine = 100;
@@ -141,7 +143,7 @@ private:
     if (Line.Tokens[Index].Tok.is(tok::r_paren) ||
         Line.Tokens[Index].Tok.is(tok::r_square))
       State.Indent.pop_back();
- 
+
     ++State.ConsumedTokens;
   }
 
@@ -388,7 +390,14 @@ private:
       unsigned Offset = SourceMgr.getFileOffset(Token.WhiteSpaceStart);
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
-      replaceWhitespace(Token, Newlines, Level * 2);
+      unsigned Indent = Level * 2;
+      if (Token.Tok.is(tok::raw_identifier)) {
+        StringRef Text(SourceMgr.getCharacterData(Token.Tok.getLocation()),
+                       Token.Tok.getLength());
+        if (Text == "public" || Text == "protected" || Text == "private")
+          Indent += Config.AccessModifierOffset;
+      }
+      replaceWhitespace(Token, Newlines, Indent);
     }
   }
 
