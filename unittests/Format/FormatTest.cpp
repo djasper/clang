@@ -32,6 +32,15 @@ protected:
   std::string format(llvm::StringRef Code) {
     return format(Code, 0, Code.size());
   }
+
+  void verifyFormat(llvm::StringRef Code) {
+    std::string WithoutFormat(Code.str());
+    for (unsigned i = 0, e = WithoutFormat.size(); i != e; ++i) {
+      if (WithoutFormat[i] == '\n')
+        WithoutFormat[i] = ' ';
+    }
+    EXPECT_EQ(Code.str(), format(WithoutFormat));
+  }
 };
 
 TEST_F(FormatTest, DoesNotChangeCorrectlyFormatedCode) {
@@ -46,7 +55,7 @@ TEST_F(FormatTest, FormatsGlobalStatementsAt0) {
 }
 
 TEST_F(FormatTest, FormatsUnwrappedLinesAtFirstFormat) {
-  EXPECT_EQ("int\n    i;", format("int\ni;"));
+  EXPECT_EQ("int i;", format("int\ni;"));
 }
 
 TEST_F(FormatTest, FormatsNestedBlockStatements) {
@@ -54,64 +63,42 @@ TEST_F(FormatTest, FormatsNestedBlockStatements) {
 }
 
 TEST_F(FormatTest, FormatsForLoop) {
-  EXPECT_EQ("for (int i = 0; i < 10; ++i);",
-            format("for(int i=0;i<10;++i);"));
-  EXPECT_EQ("for (int i = 0;\n     i < 10;\n     ++i);",
-            format("for(int i=0;\ni<10;\n++i);"));
+  verifyFormat(
+      "for (int VeryVeryLongLoopVariable = 0; VeryVeryLongLoopVariable < 10;\n"
+      "     ++VeryVeryLongLoopVariable);");
 }
 
 TEST_F(FormatTest, FormatsWhileLoop) {
-  EXPECT_EQ("while (true) {\n}", format("while(true){}"));
+  verifyFormat("while (true) {\n}");
 }
 
 TEST_F(FormatTest, FormatsNestedCall) {
-  EXPECT_EQ("Method(1,\n"
-            "       2(\n"
-            "           3));",
-            format("Method(1,\n2(\n3));"));
-  EXPECT_EQ("Method(1(2,\n"
-            "         3()));", format("Method(1(2,\n3()));"));
+  verifyFormat("Method(f1, f2(f3));");
+  verifyFormat("Method(f1(f2, f3()));");
 }
 
 TEST_F(FormatTest, FormatsAwesomeMethodCall) {
-  EXPECT_EQ(
+  verifyFormat(
       "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
-      "    parameter, parameter, parameter)), SecondLongCall(some_parameter));",
-      format(
-          "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
-          "parameter , parameter, parameter)), SecondLongCall("
-          "some_parameter) );"));
-  EXPECT_EQ(
-      "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
-      "    parameter, parameter, parameter)), SecondLongCall(some_parameter));",
-      format(
-          "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod("
-          "parameter,parameter,parameter)),SecondLongCall("
-          "some_parameter) );"));
+      "    parameter, parameter, parameter)), SecondLongCall(some_parameter));");
 }
 
 TEST_F(FormatTest, FormatsFunctionDefinition) {
-  EXPECT_EQ(
+  verifyFormat(
       "void f(int a, int b, int c, int d, int e, int f, int g,"
-      " int h, int j, int f,\n       int c, int ddddddddddddd) {\n}",
-      format("void f(int a, int b, int c, int d, int e, int f, int g,"
-        "int h, int j, int f, int c, int ddddddddddddd) {}"));
+          " int h, int j, int f,\n"
+      "       int c, int ddddddddddddd) {\n"
+      "}");
 }
 
 TEST_F(FormatTest, FormatIfWithoutCompountStatement) {
-  EXPECT_EQ(
-      "if (true)\n  f();\ng();",
-      format("if (true) f(); g();"));
-  EXPECT_EQ(
-      "if (a)\n  if (b)\n    if (c)\n      g();\nh();",
-      format("if(a)if(b)if(c)g();h();"));
-  EXPECT_EQ(
-      "if (a)\n  if (b) {\n    f();\n  }\ng();",
-      format("if(a)if(b) {f();}g();"));
+  verifyFormat("if (true)\n  f();\ng();");
+  verifyFormat("if (a)\n  if (b)\n    if (c)\n      g();\nh();");
+  verifyFormat("if (a)\n  if (b) {\n    f();\n  }\ng();");
 }
 
 TEST_F(FormatTest, ParseIfThenElse) {
-  EXPECT_EQ(
+  verifyFormat(
       "if (true)\n"
       "  if (true)\n"
       "    if (true)\n"
@@ -121,10 +108,8 @@ TEST_F(FormatTest, ParseIfThenElse) {
       "  else\n"
       "    h();\n"
       "else\n"
-      "  i();",
-      format("if(true)\nif(true)\nif(true)\nf();\n"
-             "else\ng();\nelse\nh();\nelse\ni();"));
-  EXPECT_EQ(
+      "  i();");
+  verifyFormat(
       "if (true)\n"
       "  if (true)\n"
       "    if (true) {\n"
@@ -137,9 +122,7 @@ TEST_F(FormatTest, ParseIfThenElse) {
       "    h();\n"
       "else {\n"
       "  i();\n"
-      "}",
-      format("if(true)\nif(true)\nif(true){\nif(true)f();\n"
-             "}else{\ng();\n}\nelse\nh();\nelse{\ni();\n}"));
+      "}");
 }
 
 TEST_F(FormatTest, UnderstandsSingleLineComments) {
@@ -153,13 +136,26 @@ TEST_F(FormatTest, UnderstandsSingleLineComments) {
 }
 
 TEST_F(FormatTest, DoesNotBreakSemiAfterClassDecl) {
-  EXPECT_EQ(
-      "class A {\n};\n", format("class A{};\n"));
+  verifyFormat("class A {\n};");
 }
 
-TEST_F(FormatTest, UnderstandsPPKeywords) {
-  EXPECT_EQ(
-      "#include <a.h>\\\nest\nb\n", format("#include <a.h>\\\nest\nb\n"));
+TEST_F(FormatTest, BreaksAsHighAsPossible) {
+  verifyFormat(
+      "if ((aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa && aaaaaaaaaaaaaaaaaaaaaaaaaa) ||\n"
+      "    (bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb && bbbbbbbbbbbbbbbbbbbbbbbbbb))\n"
+      "  f();");
+}
+
+TEST_F(FormatTest, ElseIf) {
+  verifyFormat("if (a) {\n"
+               "} else if (b) {\n"
+               "}");
+  verifyFormat("if (a)\n"
+               "  f();\n"
+               "else if (b)\n"
+               "  g();\n"
+               "else\n"
+               "  h();");
 }
 
 } // end namespace tooling
