@@ -56,6 +56,8 @@ FormatStyle getLLVMStyle();
 FormatStyle getGoogleStyle();
 
 /// \brief Reformats the given Ranges in the token stream coming out of \c Lex.
+/// Ranges are extended to include full unwrapped lines.
+/// TODO(alexfh): Document what unwrapped lines are.
 tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
                                SourceManager &SourceMgr,
                                std::vector<CodeRange> Ranges);
