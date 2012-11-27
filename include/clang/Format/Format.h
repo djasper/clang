@@ -37,8 +37,27 @@ struct CodeRange {
   unsigned Length;
 };
 
+struct FormatStyle {
+  /// \brief The column limit.
+  unsigned ColumnLimit;
+
+  /// \brief The maximum number of consecutive empty lines to keep.
+  unsigned MaxEmptyLinesToKeep;
+
+  /// \brief Set whether & and * bind to the type as opposed to the variable.
+  bool PointerAndReferenceBindToType;
+
+  /// \brief The extra indent or outdent of access modifiers (e.g.: public:).
+  int AccessModifierOffset;
+};
+
+FormatStyle getLLVMStyle();
+
+FormatStyle getGoogleStyle();
+
 /// \brief Reformats the given Ranges in the token stream coming out of \c Lex.
-tooling::Replacements reformat(Lexer &Lex, SourceManager &SourceMgr,
+tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
+                               SourceManager &SourceMgr,
                                std::vector<CodeRange> Ranges);
 
 } // end namespace format

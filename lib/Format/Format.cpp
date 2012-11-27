@@ -28,26 +28,40 @@ namespace format {
 
 using llvm::MutableArrayRef;
 
-struct FormatConfig {
-  int AccessModifierOffset;
-  unsigned NumColumns;
-  unsigned NumKeepEmptyLines;
+FormatStyle getLLVMStyle() {
+  FormatStyle LLVMStyle;
+  LLVMStyle.ColumnLimit = 80;
+  LLVMStyle.MaxEmptyLinesToKeep = 1;
+  LLVMStyle.PointerAndReferenceBindToType = false;
+  LLVMStyle.AccessModifierOffset = -2;
+  return LLVMStyle;
+}
+
+FormatStyle getGoogleStyle() {
+  FormatStyle GoogleStyle;
+  GoogleStyle.ColumnLimit = 80;
+  GoogleStyle.MaxEmptyLinesToKeep = 1;
+  GoogleStyle.PointerAndReferenceBindToType = true;
+  GoogleStyle.AccessModifierOffset = -1;
+  return GoogleStyle;
+}
+
+struct OptimizationParameters {
   unsigned PenaltyExtraLine;
   unsigned PenaltyIndentLevel;
 };
 
 class UnwrappedLineFormatter {
 public:
-  UnwrappedLineFormatter(SourceManager &SourceMgr, const UnwrappedLine &Line,
+  UnwrappedLineFormatter(const FormatStyle &Style, SourceManager &SourceMgr,
+                         const UnwrappedLine &Line,
                          tooling::Replacements &Replaces)
-      : SourceMgr(SourceMgr),
+      : Style(Style),
+        SourceMgr(SourceMgr),
         Line(Line),
         Replaces(Replaces) {
-    Config.AccessModifierOffset = - 2;
-    Config.NumColumns = 80;
-    Config.NumKeepEmptyLines = 1;
-    Config.PenaltyExtraLine = 100;
-    Config.PenaltyIndentLevel = 1;
+    Parameters.PenaltyExtraLine = 100;
+    Parameters.PenaltyIndentLevel = 1;
   }
 
   void format() {
@@ -111,7 +125,8 @@ private:
     unsigned ParenLevel = Annotations[Index].ParenLevel;
 
     if (Line.Tokens[Index].Tok.is(tok::l_paren) ||
-        Line.Tokens[Index].Tok.is(tok::l_square))
+        Line.Tokens[Index].Tok.is(tok::l_square) ||
+        Line.Tokens[Index].Tok.is(tok::less))
       State.Indent.push_back(4 + Line.Level * 2);
 
     if (Newline) {
@@ -132,6 +147,8 @@ private:
       if (!DryRun)
         replaceWhitespace(Line.Tokens[Index], 0, Spaces);
       if (Line.Tokens[Index - 1].Tok.is(tok::l_paren))
+        State.Indent[ParenLevel] = State.Column;
+      if (Line.Tokens[Index - 1].Tok.is(tok::less))
         State.Indent[ParenLevel] = State.Column;
       if (Line.Tokens[Index].Tok.is(tok::colon)) {
         State.Indent[ParenLevel] = State.Column + 3;
@@ -169,6 +186,14 @@ private:
           ++TemplateCount;
           break;
         case tok::greater:
+          --TemplateCount;
+          if (TemplateCount == 0)
+            return ParenCount == 0;
+          break;
+        case tok::greatergreater:
+          --TemplateCount;
+          if (TemplateCount == 0)
+            return ParenCount == 0;
           --TemplateCount;
           if (TemplateCount == 0)
             return ParenCount == 0;
@@ -272,6 +297,13 @@ private:
   typedef std::map<IndentState, unsigned> StateMap;
   StateMap Memory;
 
+  unsigned bindPenalty(const FormatToken &Token) {
+    if (Token.Tok.is(tok::comma))
+      return 1;
+    else
+      return 2;
+  }
+
   /// \brief Calculate the number of lines needed to format the remaining part
   /// of the unwrapped line.
   ///
@@ -301,14 +333,16 @@ private:
     addToken(NewLine, true, State);
 
     // Exceeding column limit is bad.
-    if (State.Column > Config.NumColumns)
+    if (State.Column > Style.ColumnLimit)
       return UINT_MAX;
 
     unsigned CurrentPenalty = 0;
-    if (NewLine)
-      CurrentPenalty += Config.PenaltyIndentLevel *
+    if (NewLine) {
+      CurrentPenalty += Parameters.PenaltyIndentLevel *
           Annotations[State.ConsumedTokens - 1].ParenLevel +
-          Config.PenaltyExtraLine;
+          Parameters.PenaltyExtraLine +
+          bindPenalty(Line.Tokens[State.ConsumedTokens - 2]);
+    }
 
     if (StopAt <= CurrentPenalty)
       return UINT_MAX;
@@ -348,6 +382,10 @@ private:
   }
 
   bool spaceRequiredBetween(Token Left, Token Right) {
+    if (Left.is(tok::greater) && Right.is(tok::greater))
+      return true;
+    if (Left.is(tok::less) && Right.is(tok::less))
+      return true;
     if (Left.is(tok::arrow) || Right.is(tok::arrow))
       return false;
     if (Left.is(tok::exclaim))
@@ -355,7 +393,9 @@ private:
     if (Left.is(tok::less) || Right.is(tok::greater) || Right.is(tok::less))
       return false;
     if (Left.is(tok::amp) || Left.is(tok::star))
-      return Right.isLiteral();
+      return Right.isLiteral() || Style.PointerAndReferenceBindToType;
+    if (Right.is(tok::amp) || Right.is(tok::star))
+      return Left.isLiteral() || !Style.PointerAndReferenceBindToType;
     if (Left.is(tok::l_square) || Right.is(tok::l_square) ||
         Right.is(tok::r_square))
       return false;
@@ -386,7 +426,7 @@ private:
   void addNewline(const FormatToken &Token, unsigned Level, unsigned Num = 1) {
     if (Token.WhiteSpaceStart.isValid()) {
       unsigned Newlines =
-          std::min(Token.NewlinesBefore, Config.NumKeepEmptyLines + 1);
+          std::min(Token.NewlinesBefore, Style.MaxEmptyLinesToKeep + 1);
       unsigned Offset = SourceMgr.getFileOffset(Token.WhiteSpaceStart);
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
@@ -395,25 +435,28 @@ private:
         StringRef Text(SourceMgr.getCharacterData(Token.Tok.getLocation()),
                        Token.Tok.getLength());
         if (Text == "public" || Text == "protected" || Text == "private")
-          Indent += Config.AccessModifierOffset;
+          Indent += Style.AccessModifierOffset;
       }
       replaceWhitespace(Token, Newlines, Indent);
     }
   }
 
+  FormatStyle Style;
   SourceManager &SourceMgr;
   const UnwrappedLine &Line;
   std::vector<TokenAnnotation> Annotations;
   tooling::Replacements &Replaces;
   unsigned int count;
-  FormatConfig Config;
+
+  OptimizationParameters Parameters;
 };
 
 class Formatter : public UnwrappedLineConsumer {
 public:
-  Formatter(Lexer &Lex, SourceManager &SourceMgr,
+  Formatter(const FormatStyle &Style, Lexer &Lex, SourceManager &SourceMgr,
             const std::vector<CodeRange> &Ranges)
-      : Lex(Lex),
+      : Style(Style),
+        Lex(Lex),
         SourceMgr(SourceMgr),
         Ranges(Ranges) {
   }
@@ -441,21 +484,23 @@ private:
       if (LineEnd < RangeBegin || LineBegin > RangeEnd)
         continue;
 
-      UnwrappedLineFormatter Formatter(SourceMgr, TheLine, Replaces);
+      UnwrappedLineFormatter Formatter(Style, SourceMgr, TheLine, Replaces);
       Formatter.format();
       return;
     }
   }
 
+  FormatStyle Style;
   Lexer &Lex;
   SourceManager &SourceMgr;
   tooling::Replacements Replaces;
   std::vector<CodeRange> Ranges;
 };
 
-tooling::Replacements reformat(Lexer &Lex, SourceManager &SourceMgr,
+tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
+                               SourceManager &SourceMgr,
                                std::vector<CodeRange> Ranges) {
-  Formatter formatter(Lex, SourceMgr, Ranges);
+  Formatter formatter(Style, Lex, SourceMgr, Ranges);
   return formatter.format();
 }
 

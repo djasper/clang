@@ -23,7 +23,8 @@ protected:
     std::vector<CodeRange> Ranges(1, CodeRange(offset, length));
     Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources,
               LangOptions());
-    tooling::Replacements Replace = reformat(Lex, Context.Sources, Ranges);
+    tooling::Replacements Replace =
+        reformat(getLLVMStyle(), Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
     //llvm::outs() << Context.getRewrittenText(ID) << "\n";
     return Context.getRewrittenText(ID);
