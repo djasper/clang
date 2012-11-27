@@ -126,7 +126,7 @@ private:
 
     if (Line.Tokens[Index].Tok.is(tok::l_paren) ||
         Line.Tokens[Index].Tok.is(tok::l_square) ||
-        Line.Tokens[Index].Tok.is(tok::less))
+        (Line.Tokens[Index].Tok.is(tok::less) && !Annotations[Index].IsOperator))
       State.Indent.push_back(4 + Line.Level * 2);
 
     if (Newline) {
@@ -148,7 +148,8 @@ private:
         replaceWhitespace(Line.Tokens[Index], 0, Spaces);
       if (Line.Tokens[Index - 1].Tok.is(tok::l_paren))
         State.Indent[ParenLevel] = State.Column;
-      if (Line.Tokens[Index - 1].Tok.is(tok::less))
+      if (Line.Tokens[Index - 1].Tok.is(tok::less) &&
+          !Annotations[Index - 1].IsOperator)
         State.Indent[ParenLevel] = State.Column;
       if (Line.Tokens[Index].Tok.is(tok::colon)) {
         State.Indent[ParenLevel] = State.Column + 3;
