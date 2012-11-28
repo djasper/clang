@@ -88,6 +88,9 @@ private:
   void parseStatement();
   void parseParens();
   void parseIfThenElse();
+  void parseLabel();
+  void parseCaseLabel();
+  void parseSwitch();
   void parseAccessSpecifier();
   void addUnwrappedLine();
   bool eof() const;

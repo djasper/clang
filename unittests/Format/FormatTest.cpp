@@ -169,5 +169,21 @@ TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
                "};");
 }
 
+TEST_F(FormatTest, SwitchStatement) {
+  verifyFormat("switch(x) {\n"
+               "case 1:\n"
+               "  f();\n"
+               "  break;\n"
+               "case kFoo:\n"
+               "case ns::kBar:\n"
+               "case kBaz:\n"
+               "  break;\n"
+               "default:\n"
+               "  g();\n"
+               "  break;\n"
+               "}");
+  verifyFormat("switch(test)\n"
+               "  ;");
+}
 } // end namespace tooling
 } // end namespace clang
