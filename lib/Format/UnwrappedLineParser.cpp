@@ -203,16 +203,6 @@ void UnwrappedLineParser::parseIfThenElse() {
   }
 }
 
-void UnwrappedLineParser::parseCaseLabel() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) &&
-         tokenText() == "case" && "'case' expected");
-  // TODO(alexfh): fix handling of complex expressions here.
-  while (!FormatTok.Tok.is(tok::colon)) {
-    nextToken();
-  }
-  parseLabel();
-}
-
 void UnwrappedLineParser::parseLabel() {
   assert(FormatTok.Tok.is(tok::colon) && "':' expected");
   nextToken();
@@ -227,6 +217,16 @@ void UnwrappedLineParser::parseLabel() {
     --Line.Level;
   }
   ++Line.Level;
+}
+
+void UnwrappedLineParser::parseCaseLabel() {
+  assert(FormatTok.Tok.is(tok::raw_identifier) &&
+         tokenText() == "case" && "'case' expected");
+  // TODO(alexfh): fix handling of complex expressions here.
+  do {
+    nextToken();
+  } while (!FormatTok.Tok.is(tok::colon));
+  parseLabel();
 }
 
 void UnwrappedLineParser::parseSwitch() {
