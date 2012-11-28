@@ -78,7 +78,7 @@ void UnwrappedLineParser::parseBlock() {
     --Line.Level;
   assert(FormatTok.Tok.is(tok::r_brace) && "expected '}'");
   nextToken();
-  if (FormatTok.Tok.getKind() == tok::semi)
+  if (FormatTok.Tok.is(tok::semi))
     nextToken();
 }
 
@@ -127,6 +127,25 @@ void UnwrappedLineParser::parseStatement() {
           parseIfThenElse();
           return;
         }
+        if (Text == "switch") {
+          parseSwitch();
+          return;
+        }
+        if (Text == "default") {
+          nextToken();
+          parseLabel();
+          return;
+        }
+        if (Text == "case") {
+          parseCaseLabel();
+          return;
+        }
+        nextToken();
+        if (FormatTok.Tok.is(tok::colon)) {
+          parseLabel();
+          return;
+        }
+        break;
       default:
         nextToken();
         break;
@@ -135,7 +154,7 @@ void UnwrappedLineParser::parseStatement() {
 }
 
 void UnwrappedLineParser::parseParens() {
-  assert(FormatTok.Tok.getKind() == tok::l_paren && "'(' expected.");
+  assert(FormatTok.Tok.is(tok::l_paren) && "'(' expected.");
   nextToken();
   do {
     switch (FormatTok.Tok.getKind()) {
@@ -157,7 +176,7 @@ void UnwrappedLineParser::parseIfThenElse() {
   nextToken();
   parseParens();
   bool NeedsUnwrappedLine = false;
-  if (FormatTok.Tok.getKind() == tok::l_brace) {
+  if (FormatTok.Tok.is(tok::l_brace)) {
     parseBlock();
     NeedsUnwrappedLine = true;
   } else {
@@ -168,7 +187,7 @@ void UnwrappedLineParser::parseIfThenElse() {
   }
   if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "else") {
     nextToken();
-    if (FormatTok.Tok.getKind() == tok::l_brace) {
+    if (FormatTok.Tok.is(tok::l_brace)) {
       parseBlock();
       addUnwrappedLine();
     } else if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "if") {
@@ -181,6 +200,45 @@ void UnwrappedLineParser::parseIfThenElse() {
     }
   } else if (NeedsUnwrappedLine) {
     addUnwrappedLine();
+  }
+}
+
+void UnwrappedLineParser::parseLabel() {
+  // TODO: remove all asserts!!!!
+  assert(FormatTok.Tok.is(tok::colon) && "':' expected");
+  nextToken();
+  --Line.Level;
+  if (FormatTok.Tok.is(tok::l_brace)) {
+    parseBlock();
+    addUnwrappedLine();
+  } else {
+    addUnwrappedLine();
+  }
+  ++Line.Level;
+}
+
+void UnwrappedLineParser::parseCaseLabel() {
+  assert(FormatTok.Tok.is(tok::raw_identifier) &&
+         tokenText() == "case" && "'case' expected");
+  // TODO(alexfh): fix handling of complex expressions here.
+  do {
+    nextToken();
+  } while (!eof() && !FormatTok.Tok.is(tok::colon));
+  parseLabel();
+}
+
+void UnwrappedLineParser::parseSwitch() {
+  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  nextToken();
+  parseParens();
+  if (FormatTok.Tok.is(tok::l_brace)) {
+    parseBlock();
+    addUnwrappedLine();
+  } else {
+    addUnwrappedLine();
+    ++Line.Level;
+    parseStatement();
+    --Line.Level;
   }
 }
 
@@ -202,7 +260,7 @@ void UnwrappedLineParser::addUnwrappedLine() {
 }
 
 bool UnwrappedLineParser::eof() const {
-  return FormatTok.Tok.getKind() == tok::eof;
+  return FormatTok.Tok.is(tok::eof);
 }
 
 void UnwrappedLineParser::nextToken() {
@@ -218,7 +276,7 @@ void UnwrappedLineParser::parseToken() {
   FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation();
 
   // Consume and record whitespace until we find a significant token.
-  while (FormatTok.Tok.getKind() == tok::unknown) {
+  while (FormatTok.Tok.is(tok::unknown)) {
     FormatTok.NewlinesBefore += tokenText().count('\n');
     FormatTok.WhiteSpaceLength += FormatTok.Tok.getLength();
 
