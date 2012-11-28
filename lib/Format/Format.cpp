@@ -170,37 +170,37 @@ private:
     unsigned TemplateCount = 0;
 
     for (unsigned i = Index, e = Line.Tokens.size(); i != e; ++i) {
-      switch (Line.Tokens[i].Tok.getKind()) {
-        case tok::ampamp:
-        case tok::pipepipe:
+      switch(Line.Tokens[i].Tok.getKind()) {
+      case tok::ampamp:
+      case tok::pipepipe:
+        return false;
+        break;
+      case tok::l_paren:
+        ++ParenCount;
+        break;
+      case tok::r_paren:
+        if (ParenCount == 0)
           return false;
-          break;
-        case tok::l_paren:
-          ++ParenCount;
-          break;
-        case tok::r_paren:
-          if (ParenCount == 0)
-            return false;
-          --ParenCount;
-          break;
-        case tok::less:
-          ++TemplateCount;
-          break;
-        case tok::greater:
-          --TemplateCount;
-          if (TemplateCount == 0)
-            return ParenCount == 0;
-          break;
-        case tok::greatergreater:
-          --TemplateCount;
-          if (TemplateCount == 0)
-            return ParenCount == 0;
-          --TemplateCount;
-          if (TemplateCount == 0)
-            return ParenCount == 0;
-          break;
-        default:
-          break;
+        --ParenCount;
+        break;
+      case tok::less:
+        ++TemplateCount;
+        break;
+      case tok::greater:
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        break;
+      case tok::greatergreater:
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        break;
+      default:
+        break;
       }
     }
     return false;
@@ -220,6 +220,8 @@ private:
   void analyzeTokens() {
     bool IsTernaryExpr = false;
     SmallVector<tok::TokenKind, 32> Parens;
+    StringRef Text(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
+                   Line.Tokens[0].Tok.getLength());
     for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
       if (Line.Tokens[i].Tok.is(tok::question))
         IsTernaryExpr = true;
@@ -247,7 +249,9 @@ private:
             canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
 
       if (Line.Tokens[i].Tok.is(tok::colon)) {
-        if (i == e - 1) {
+        if (Text == "case") {
+          Annotation.SpaceRequiredBefore = false;
+        } else if (i == e - 1) {
           Annotation.SpaceRequiredBefore = false;
         } else {
           Annotation.IsTernaryExprColon = IsTernaryExpr;
@@ -268,19 +272,19 @@ private:
   }
 
   bool isBinaryOperator(const FormatToken &Tok) {
-    switch (Tok.Tok.getKind()) {
-      case tok::star:
-      //case tok::amp:
-      case tok::plus:
-      case tok::slash:
-      case tok::minus:
-      case tok::ampamp:
-      case tok::pipe:
-      case tok::pipepipe:
-      case tok::percent:
-        return true;
-      default:
-        return false;
+    switch(Tok.Tok.getKind()) {
+    case tok::star:
+    //case tok::amp:
+    case tok::plus:
+    case tok::slash:
+    case tok::minus:
+    case tok::ampamp:
+    case tok::pipe:
+    case tok::pipepipe:
+    case tok::percent:
+      return true;
+    default:
+      return false;
     }
   }
 
