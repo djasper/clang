@@ -212,9 +212,6 @@ void UnwrappedLineParser::parseLabel() {
     addUnwrappedLine();
   } else {
     addUnwrappedLine();
-    ++Line.Level;
-    parseStatement();
-    --Line.Level;
   }
   ++Line.Level;
 }

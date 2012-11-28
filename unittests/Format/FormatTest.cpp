@@ -183,6 +183,12 @@ TEST_F(FormatTest, SwitchStatement) {
                "  g();\n"
                "  break;\n"
                "}");
+  verifyFormat("switch(x) {\n"
+               "case 1: {\n"
+               "  f();\n"
+               "  break;\n"
+               "}\n"
+               "}");
   verifyFormat("switch(test)\n"
                "  ;");
 }
