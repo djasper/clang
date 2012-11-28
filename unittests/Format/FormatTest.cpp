@@ -21,8 +21,9 @@ protected:
     RewriterTestContext Context;
     FileID ID = Context.createInMemoryFile("input.cc", Code);
     std::vector<CodeRange> Ranges(1, CodeRange(offset, length));
-    Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources,
-              LangOptions());
+    LangOptions LangOpts;
+    LangOpts.CPlusPlus = 1;
+    Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources, LangOpts);
     tooling::Replacements Replace =
         reformat(getLLVMStyle(), Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
