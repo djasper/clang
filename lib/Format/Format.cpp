@@ -26,6 +26,18 @@
 namespace clang {
 namespace format {
 
+// FIXME: Move somewhere sane.
+struct TokenAnnotation {
+  bool SpaceRequiredBefore;
+  bool CanBreakBefore;
+  bool IsTernaryExprColon;
+  bool IsOperator;
+
+  /// \brief The current parenthesis level, i.e. the number of opening minus
+  /// the number of closing parenthesis le; of the current position.
+  unsigned ParenLevel;
+};
+
 using llvm::MutableArrayRef;
 
 FormatStyle getLLVMStyle() {
@@ -55,18 +67,19 @@ class UnwrappedLineFormatter {
 public:
   UnwrappedLineFormatter(const FormatStyle &Style, SourceManager &SourceMgr,
                          const UnwrappedLine &Line,
+                         const std::vector<TokenAnnotation> &Annotations,
                          tooling::Replacements &Replaces)
       : Style(Style),
         SourceMgr(SourceMgr),
         Line(Line),
+        Annotations(Annotations),
         Replaces(Replaces) {
     Parameters.PenaltyExtraLine = 100;
     Parameters.PenaltyIndentLevel = 1;
   }
 
   void format() {
-    analyzeTokens();
-    addNewline(Line.Tokens[0], Line.Level);
+    formatFirstToken();
     count = 0;
     IndentState State;
     State.Column = Line.Level * 2 + Line.Tokens[0].Tok.getLength();
@@ -95,6 +108,7 @@ private:
     /// \brief The number of used columns in the current line.
     unsigned Column;
 
+    /// \brief The number of tokens already consumed.
     unsigned ConsumedTokens;
 
     /// \brief The position to which a specific parenthesis level needs to be
@@ -104,6 +118,7 @@ private:
     bool CtorInitializerOnNewLine;
     bool InCtorInitializer;
 
+    /// \brief Comparison operator to be able to used \c IndentState in \c map.
     bool operator<(const IndentState &Other) const {
       if (Other.ConsumedTokens != ConsumedTokens)
         return Other.ConsumedTokens > ConsumedTokens;
@@ -165,138 +180,7 @@ private:
     ++State.ConsumedTokens;
   }
 
-  bool isTemplateOpener(unsigned Index) {
-    unsigned ParenCount = 0;
-    unsigned TemplateCount = 0;
-
-    for (unsigned i = Index, e = Line.Tokens.size(); i != e; ++i) {
-      switch(Line.Tokens[i].Tok.getKind()) {
-      case tok::ampamp:
-      case tok::pipepipe:
-        return false;
-        break;
-      case tok::l_paren:
-        ++ParenCount;
-        break;
-      case tok::r_paren:
-        if (ParenCount == 0)
-          return false;
-        --ParenCount;
-        break;
-      case tok::less:
-        ++TemplateCount;
-        break;
-      case tok::greater:
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        break;
-      case tok::greatergreater:
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        break;
-      default:
-        break;
-      }
-    }
-    return false;
-  }
-
-  struct TokenAnnotation {
-    bool SpaceRequiredBefore;
-    bool CanBreakBefore;
-    bool IsTernaryExprColon;
-    bool IsOperator;
-
-    /// \brief The current parenthesis level, i.e. the number of opening minus
-    /// the number of closing parenthesis le; of the current position.
-    unsigned ParenLevel;
-  };
-
   void analyzeTokens() {
-    bool IsTernaryExpr = false;
-    SmallVector<tok::TokenKind, 32> Parens;
-    StringRef Text(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
-                   Line.Tokens[0].Tok.getLength());
-    for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
-      if (Line.Tokens[i].Tok.is(tok::question))
-        IsTernaryExpr = true;
-      TokenAnnotation Annotation;
-      Annotation.IsOperator = false;
-      Annotation.ParenLevel = Parens.size();
-
-      const FormatToken &Token = Line.Tokens[i];
-      if (Token.Tok.is(tok::l_paren) || Token.Tok.is(tok::l_square)) {
-        Parens.push_back(Token.Tok.getKind());
-      } else if (Token.Tok.is(tok::r_paren) || Token.Tok.is(tok::r_square)) {
-        Parens.pop_back();
-      } else if (Token.Tok.is(tok::less)) {
-        Annotation.IsOperator = !isTemplateOpener(i);
-        if (!Annotation.IsOperator)
-          Parens.push_back(tok::less);
-      } else if (Token.Tok.is(tok::greater)) {
-        Annotation.IsOperator = Parens.back() != tok::less;
-        if (!Annotation.IsOperator)
-          Parens.pop_back();
-      }
-
-      if (i != 0)
-        Annotation.CanBreakBefore =
-            canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
-
-      if (Line.Tokens[i].Tok.is(tok::colon)) {
-        if (Text == "case") {
-          Annotation.SpaceRequiredBefore = false;
-        } else if (i == e - 1) {
-          Annotation.SpaceRequiredBefore = false;
-        } else {
-          Annotation.IsTernaryExprColon = IsTernaryExpr;
-          Annotation.SpaceRequiredBefore = true;
-        }
-      } else if (i == 0) {
-        Annotation.SpaceRequiredBefore = false;
-      } else if (i != 0) {
-        if (Annotation.IsOperator || Annotations[i - 1].IsOperator) {
-          Annotation.SpaceRequiredBefore = true;
-        } else {
-          Annotation.SpaceRequiredBefore =
-              spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
-        }
-      }
-      Annotations.push_back(Annotation);
-    }
-  }
-
-  bool isBinaryOperator(const FormatToken &Tok) {
-    switch(Tok.Tok.getKind()) {
-    case tok::star:
-    //case tok::amp:
-    case tok::plus:
-    case tok::slash:
-    case tok::minus:
-    case tok::ampamp:
-    case tok::pipe:
-    case tok::pipepipe:
-    case tok::percent:
-      return true;
-    default:
-      return false;
-    }
-  }
-
-  bool canBreakBetween(const FormatToken &Left, const FormatToken &Right) {
-    if (Right.Tok.is(tok::r_paren))
-      return false;
-    if (isBinaryOperator(Left))
-      return true;
-    return Right.Tok.is(tok::colon) ||
-      Left.Tok.is(tok::comma) || Left.Tok.is(tok::semi) ||
-      Left.Tok.is(tok::equal) || Left.Tok.is(tok::ampamp) ||
-      (Left.Tok.is(tok::l_paren) && !Right.Tok.is(tok::r_paren));
   }
 
   typedef std::map<IndentState, unsigned> StateMap;
@@ -379,6 +263,165 @@ private:
         std::string(NewLines, '\n') + std::string(Spaces, ' ')));
   }
 
+  /// \brief Add a new line and the required indent before the first Token
+  /// of the \c UnwrappedLine.
+  void formatFirstToken() {
+    const FormatToken &Token = Line.Tokens[0];
+    if (Token.WhiteSpaceStart.isValid()) {
+      unsigned Newlines =
+          std::min(Token.NewlinesBefore, Style.MaxEmptyLinesToKeep + 1);
+      unsigned Offset = SourceMgr.getFileOffset(Token.WhiteSpaceStart);
+      if (Newlines == 0 && Offset != 0)
+        Newlines = 1;
+      unsigned Indent = Line.Level * 2;
+      if (Token.Tok.is(tok::raw_identifier)) {
+        StringRef Text(SourceMgr.getCharacterData(Token.Tok.getLocation()),
+                       Token.Tok.getLength());
+        if (Text == "public" || Text == "protected" || Text == "private")
+          Indent += Style.AccessModifierOffset;
+      }
+      replaceWhitespace(Token, Newlines, Indent);
+    }
+  }
+
+  FormatStyle Style;
+  SourceManager &SourceMgr;
+  const UnwrappedLine &Line;
+  const std::vector<TokenAnnotation> &Annotations;
+  tooling::Replacements &Replaces;
+  unsigned int count;
+
+  OptimizationParameters Parameters;
+};
+
+class TokenAnnotator {
+public:
+  TokenAnnotator(const UnwrappedLine &Line, const FormatStyle &Style,
+                 SourceManager &SourceMgr)
+      : Line(Line),
+        Style(Style),
+        SourceMgr(SourceMgr) {
+  }
+
+  void annotate() {
+    Annotations.clear();
+
+    bool IsTernaryExpr = false;
+    SmallVector<tok::TokenKind, 32> Parens;
+    StringRef Text(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
+                   Line.Tokens[0].Tok.getLength());
+    for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
+      if (Line.Tokens[i].Tok.is(tok::question))
+        IsTernaryExpr = true;
+      TokenAnnotation Annotation;
+      Annotation.IsOperator = false;
+      Annotation.ParenLevel = Parens.size();
+
+      const FormatToken &Token = Line.Tokens[i];
+      if (Token.Tok.is(tok::l_paren) || Token.Tok.is(tok::l_square)) {
+        Parens.push_back(Token.Tok.getKind());
+      } else if (Token.Tok.is(tok::r_paren) || Token.Tok.is(tok::r_square)) {
+        Parens.pop_back();
+      } else if (Token.Tok.is(tok::less)) {
+        Annotation.IsOperator = !isTemplateOpener(i);
+        if (!Annotation.IsOperator)
+          Parens.push_back(tok::less);
+      } else if (Token.Tok.is(tok::greater)) {
+        Annotation.IsOperator = Parens.back() != tok::less;
+        if (!Annotation.IsOperator)
+          Parens.pop_back();
+      }
+
+      if (i != 0)
+        Annotation.CanBreakBefore =
+            canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
+
+      if (Line.Tokens[i].Tok.is(tok::colon)) {
+        if (Text == "case") {
+          Annotation.SpaceRequiredBefore = false;
+        } else if (i == e - 1) {
+          Annotation.SpaceRequiredBefore = false;
+        } else {
+          Annotation.IsTernaryExprColon = IsTernaryExpr;
+          Annotation.SpaceRequiredBefore = true;
+        }
+      } else if (i == 0) {
+        Annotation.SpaceRequiredBefore = false;
+      } else if (i != 0) {
+        if (Annotation.IsOperator || Annotations[i - 1].IsOperator) {
+          Annotation.SpaceRequiredBefore = true;
+        } else {
+          Annotation.SpaceRequiredBefore =
+              spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
+        }
+      }
+      Annotations.push_back(Annotation);
+    }
+  }
+
+  const std::vector<TokenAnnotation> &getAnnotations() {
+    return Annotations;
+  }
+
+private:
+  bool isTemplateOpener(unsigned Index) {
+    unsigned ParenCount = 0;
+    unsigned TemplateCount = 0;
+
+    for (unsigned i = Index, e = Line.Tokens.size(); i != e; ++i) {
+      switch(Line.Tokens[i].Tok.getKind()) {
+      case tok::ampamp:
+      case tok::pipepipe:
+        return false;
+        break;
+      case tok::l_paren:
+        ++ParenCount;
+        break;
+      case tok::r_paren:
+        if (ParenCount == 0)
+          return false;
+        --ParenCount;
+        break;
+      case tok::less:
+        ++TemplateCount;
+        break;
+      case tok::greater:
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        break;
+      case tok::greatergreater:
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        --TemplateCount;
+        if (TemplateCount == 0)
+          return ParenCount == 0;
+        break;
+      default:
+        break;
+      }
+    }
+    return false;
+  }
+
+  bool isBinaryOperator(const FormatToken &Tok) {
+    switch(Tok.Tok.getKind()) {
+    case tok::star:
+    //case tok::amp:
+    case tok::plus:
+    case tok::slash:
+    case tok::minus:
+    case tok::ampamp:
+    case tok::pipe:
+    case tok::pipepipe:
+    case tok::percent:
+      return true;
+    default:
+      return false;
+    }
+  }
+
   bool isIfForOrWhile(Token Tok) {
     if (Tok.getKind() != tok::raw_identifier)
       return false;
@@ -428,33 +471,21 @@ private:
     return true;
   }
 
-  /// \brief Add a new line and the required indent before \p Token.
-  void addNewline(const FormatToken &Token, unsigned Level, unsigned Num = 1) {
-    if (Token.WhiteSpaceStart.isValid()) {
-      unsigned Newlines =
-          std::min(Token.NewlinesBefore, Style.MaxEmptyLinesToKeep + 1);
-      unsigned Offset = SourceMgr.getFileOffset(Token.WhiteSpaceStart);
-      if (Newlines == 0 && Offset != 0)
-        Newlines = 1;
-      unsigned Indent = Level * 2;
-      if (Token.Tok.is(tok::raw_identifier)) {
-        StringRef Text(SourceMgr.getCharacterData(Token.Tok.getLocation()),
-                       Token.Tok.getLength());
-        if (Text == "public" || Text == "protected" || Text == "private")
-          Indent += Style.AccessModifierOffset;
-      }
-      replaceWhitespace(Token, Newlines, Indent);
-    }
+  bool canBreakBetween(const FormatToken &Left, const FormatToken &Right) {
+    if (Right.Tok.is(tok::r_paren))
+      return false;
+    if (isBinaryOperator(Left))
+      return true;
+    return Right.Tok.is(tok::colon) ||
+      Left.Tok.is(tok::comma) || Left.Tok.is(tok::semi) ||
+      Left.Tok.is(tok::equal) || Left.Tok.is(tok::ampamp) ||
+      (Left.Tok.is(tok::l_paren) && !Right.Tok.is(tok::r_paren));
   }
 
+  const UnwrappedLine &Line;
   FormatStyle Style;
   SourceManager &SourceMgr;
-  const UnwrappedLine &Line;
   std::vector<TokenAnnotation> Annotations;
-  tooling::Replacements &Replaces;
-  unsigned int count;
-
-  OptimizationParameters Parameters;
 };
 
 class Formatter : public UnwrappedLineConsumer {
@@ -490,7 +521,10 @@ private:
       if (LineEnd < RangeBegin || LineBegin > RangeEnd)
         continue;
 
-      UnwrappedLineFormatter Formatter(Style, SourceMgr, TheLine, Replaces);
+      TokenAnnotator Annotator(TheLine, Style, SourceMgr);
+      Annotator.annotate();
+      UnwrappedLineFormatter Formatter(Style, SourceMgr, TheLine,
+                                       Annotator.getAnnotations(), Replaces);
       Formatter.format();
       return;
     }
