@@ -198,5 +198,10 @@ TEST_F(FormatTest, DerivedClass) {
                "};");
 }
 
+//TEST_F(FormatTest, IncorrectDerivedClass) {
+//  verifyFormat("public B {\n"
+//               "};");
+//}
+
 } // end namespace tooling
 } // end namespace clang

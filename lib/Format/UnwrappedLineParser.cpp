@@ -108,7 +108,9 @@ void UnwrappedLineParser::parseStatement() {
     parseAccessSpecifier();
     return;
   }
+  int TokenNumber = 0;
   do {
+    ++TokenNumber;
     switch (FormatTok.Tok.getKind()) {
       case tok::semi:
         nextToken();
@@ -141,10 +143,10 @@ void UnwrappedLineParser::parseStatement() {
           return;
         }
         nextToken();
-        // if (FormatTok.Tok.is(tok::colon)) {
-        //  parseLabel();
-        //  return;
-        // }
+        if (TokenNumber == 1 && FormatTok.Tok.is(tok::colon)) {
+          parseLabel();
+          return;
+        }
         break;
       default:
         nextToken();
@@ -207,14 +209,14 @@ void UnwrappedLineParser::parseLabel() {
   // TODO: remove all asserts!!!!
   assert(FormatTok.Tok.is(tok::colon) && "':' expected");
   nextToken();
-  --Line.Level;
+  unsigned OldLineLevel = Line.Level;
+  if (Line.Level > 0)
+    --Line.Level;
   if (FormatTok.Tok.is(tok::l_brace)) {
     parseBlock();
-    addUnwrappedLine();
-  } else {
-    addUnwrappedLine();
   }
-  ++Line.Level;
+  addUnwrappedLine();
+  Line.Level = OldLineLevel;
 }
 
 void UnwrappedLineParser::parseCaseLabel() {
