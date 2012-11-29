@@ -303,10 +303,11 @@ private:
   StateMap Memory;
 
   unsigned bindPenalty(const FormatToken &Token) {
-    if (Token.Tok.is(tok::comma))
+    if (Token.Tok.is(tok::semi))
+      return 0;
+    if (Token.Tok.is(tok::equal) || Token.Tok.is(tok::comma))
       return 1;
-    else
-      return 2;
+    return 2;
   }
 
   /// \brief Calculate the number of lines needed to format the remaining part
