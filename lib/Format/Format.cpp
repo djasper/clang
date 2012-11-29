@@ -28,6 +28,9 @@ namespace format {
 
 // FIXME: Move somewhere sane.
 struct TokenAnnotation {
+  enum TokenType { TT_Unknown, TT_TemplateOpener, TT_BinaryOperator };
+  TokenType Type;
+
   bool SpaceRequiredBefore;
   bool CanBreakBefore;
   bool IsTernaryExprColon;
@@ -140,8 +143,8 @@ private:
     unsigned ParenLevel = Annotations[Index].ParenLevel;
 
     if (Line.Tokens[Index].Tok.is(tok::l_paren) ||
-        Line.Tokens[Index].Tok.is(tok::l_square) ||
-        (Line.Tokens[Index].Tok.is(tok::less) && !Annotations[Index].IsOperator))
+        Line.Tokens[Index].Tok.is(tok::l_square) || (
+        Line.Tokens[Index].Tok.is(tok::less) && !Annotations[Index].IsOperator))
       State.Indent.push_back(4 + Line.Level * 2);
 
     if (Newline) {
@@ -186,10 +189,11 @@ private:
   typedef std::map<IndentState, unsigned> StateMap;
   StateMap Memory;
 
-  unsigned bindPenalty(const FormatToken &Token) {
+  unsigned splitPenalty(const FormatToken &Token) {
     if (Token.Tok.is(tok::semi))
       return 0;
-    if (Token.Tok.is(tok::equal) || Token.Tok.is(tok::comma))
+    if (Token.Tok.is(tok::equal) || Token.Tok.is(tok::comma) ||
+        Token.Tok.is(tok::pipepipe))
       return 1;
     return 2;
   }
@@ -231,7 +235,7 @@ private:
       CurrentPenalty += Parameters.PenaltyIndentLevel *
           Annotations[State.ConsumedTokens - 1].ParenLevel +
           Parameters.PenaltyExtraLine +
-          bindPenalty(Line.Tokens[State.ConsumedTokens - 2]);
+          splitPenalty(Line.Tokens[State.ConsumedTokens - 2]);
     }
 
     if (StopAt <= CurrentPenalty)
@@ -303,8 +307,98 @@ public:
         SourceMgr(SourceMgr) {
   }
 
+  class AnnotatingParser {
+  public:
+    AnnotatingParser(const SmallVector<FormatToken, 16> &Tokens,
+                     std::vector<TokenAnnotation> &Annotations)
+        : Tokens(Tokens),
+          Annotations(Annotations),
+          Index(0) {
+    }
+
+    bool parseAngle(unsigned Level) {
+      while (Index < Tokens.size()) {
+        if (Tokens[Index].Tok.is(tok::greater))
+          Annotations[Index].Type = TokenAnnotation::TT_TemplateOpener;
+          return true;
+        if (Tokens[Index].Tok.is(tok::r_paren) ||
+            Tokens[Index].Tok.is(tok::r_brace))
+          return false;
+        if (Tokens[Index].Tok.is(tok::pipepipe) ||
+            Tokens[Index].Tok.is(tok::ampamp))
+          return false;
+        consumeToken(Level);
+      } 
+      return consumeToken(Level);
+    }
+
+    bool parseBraces(unsigned Level) {
+      while (Index < Tokens.size()) {
+        if (Tokens[Index].Tok.is(tok::r_brace))
+          return true;
+        if (Tokens[Index].Tok.is(tok::r_square))
+          return false;
+        consumeToken(Level);
+      }
+      return false;
+    }
+
+    bool parseSquare(unsigned Level) {
+      while (Index < Tokens.size()) {
+        if (Tokens[Index].Tok.is(tok::r_brace))
+          return false;
+        if (Tokens[Index].Tok.is(tok::r_square))
+          return true;
+        consumeToken(Level);
+      }
+      return false;
+    }
+
+    bool consumeToken(unsigned Level) {
+      unsigned CurrentIndex = Index;
+      next();
+      switch(Tokens[CurrentIndex].Tok.getKind()) {
+      case tok::l_brace:
+        parseBraces(Level + 1);
+        break;
+      case tok::l_square:
+        parseSquare(Level + 1);
+        break;
+      case tok::less:
+        if (parseAngle(Level + 1))
+          Annotations[CurrentIndex].Type = TokenAnnotation::TT_TemplateOpener;
+        else
+          Annotations[CurrentIndex].Type = TokenAnnotation::TT_BinaryOperator;
+        break;
+      case tok::greater:
+        Annotations[CurrentIndex].Type = TokenAnnotation::TT_BinaryOperator;
+        break;
+      default:
+        break;
+      }
+      return false;
+    }
+
+    void parseLine() {
+      while (Index < Tokens.size())
+        consumeToken(0);
+    }
+
+    void next() {
+      ++Index;
+      Annotations.push_back(TokenAnnotation());
+    }
+
+  private:
+    const SmallVector<FormatToken, 16> &Tokens;
+    std::vector<TokenAnnotation> &Annotations;
+    unsigned Index;
+  };
+
   void annotate() {
     Annotations.clear();
+    AnnotatingParser Parser(Line.Tokens, Annotations);
+    Parser.parseLine();
 
     bool IsTernaryExpr = false;
     SmallVector<tok::TokenKind, 32> Parens;
@@ -313,7 +407,7 @@ public:
     for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
       if (Line.Tokens[i].Tok.is(tok::question))
         IsTernaryExpr = true;
-      TokenAnnotation Annotation;
+      TokenAnnotation &Annotation = Annotations[i];
       Annotation.IsOperator = false;
       Annotation.ParenLevel = Parens.size();
 
@@ -355,7 +449,6 @@ public:
               spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
         }
       }
-      Annotations.push_back(Annotation);
     }
   }
 
