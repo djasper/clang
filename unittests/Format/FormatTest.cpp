@@ -193,10 +193,31 @@ TEST_F(FormatTest, SwitchStatement) {
                "  ;");
 }
 
+TEST_F(FormatTest, Labels) {
+  verifyFormat("void f() {\n"
+               "  some_code();\n"
+               "test_label:\n"
+               "  some_other_code();\n"
+               "  {\n"
+               "    some_more_code();\n"
+               "  another_label:\n"
+               "    some_more_code();\n"
+               "  }\n"
+               "}");
+  verifyFormat("some_code();\n"
+               "test_label:\n"
+               "some_other_code();");
+}
+
 TEST_F(FormatTest, DerivedClass) {
   verifyFormat("class A : public B {\n"
                "};");
 }
+
+//TEST_F(FormatTest, IncorrectDerivedClass) {
+//  verifyFormat("public B {\n"
+//               "};");
+//}
 
 } // end namespace tooling
 } // end namespace clang
