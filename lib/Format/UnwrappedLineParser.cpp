@@ -141,10 +141,10 @@ void UnwrappedLineParser::parseStatement() {
           return;
         }
         nextToken();
-        if (FormatTok.Tok.is(tok::colon)) {
-          parseLabel();
-          return;
-        }
+        // if (FormatTok.Tok.is(tok::colon)) {
+        //  parseLabel();
+        //  return;
+        // }
         break;
       default:
         nextToken();

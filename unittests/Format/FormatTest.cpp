@@ -192,5 +192,11 @@ TEST_F(FormatTest, SwitchStatement) {
   verifyFormat("switch(test)\n"
                "  ;");
 }
+
+TEST_F(FormatTest, DerivedClass) {
+  verifyFormat("class A : public B {\n"
+               "};");
+}
+
 } // end namespace tooling
 } // end namespace clang
