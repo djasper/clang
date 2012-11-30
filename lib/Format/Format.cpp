@@ -82,7 +82,7 @@ public:
         Annotations(Annotations),
         Replaces(Replaces) {
     Parameters.PenaltyExtraLine = 100;
-    Parameters.PenaltyIndentLevel = 1;
+    Parameters.PenaltyIndentLevel = 5;
   }
 
   void format() {
@@ -357,13 +357,13 @@ public:
 
     bool parseSquare(unsigned Level) {
       while (Index < Tokens.size()) {
-        if (Tokens[Index].Tok.is(tok::r_paren)) {
+        if (Tokens[Index].Tok.is(tok::r_square)) {
           Annotations[Index].ParenLevel = Level;
           next();
-          return false;
-        }
-        if (Tokens[Index].Tok.is(tok::r_square))
           return true;
+        }
+        if (Tokens[Index].Tok.is(tok::r_paren))
+          return false;
         consumeToken(Level);
       }
       return false;
