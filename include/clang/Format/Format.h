@@ -49,6 +49,8 @@ struct FormatStyle {
 
   /// \brief The extra indent or outdent of access modifiers (e.g.: public:).
   int AccessModifierOffset;
+
+  bool SplitTemplateClosingGreater;
 };
 
 FormatStyle getLLVMStyle();

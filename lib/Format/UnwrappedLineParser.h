@@ -92,6 +92,7 @@ private:
   void parseCaseLabel();
   void parseSwitch();
   void parseAccessSpecifier();
+  void parseEnum();
   void addUnwrappedLine();
   bool eof() const;
   void nextToken();
@@ -102,6 +103,7 @@ private:
 
   UnwrappedLine Line;
   FormatToken FormatTok;
+  bool GreaterStashed;
 
   Lexer &Lex;
   SourceManager &SourceMgr;

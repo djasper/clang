@@ -108,6 +108,10 @@ void UnwrappedLineParser::parseStatement() {
     parseAccessSpecifier();
     return;
   }
+  if (Text == "enum") {
+    parseEnum();
+    return;
+  }
   int TokenNumber = 0;
   do {
     ++TokenNumber;
@@ -251,6 +255,17 @@ void UnwrappedLineParser::parseAccessSpecifier() {
   addUnwrappedLine();
 }
 
+void UnwrappedLineParser::parseEnum() {
+  do {
+    nextToken();
+    if (FormatTok.Tok.is(tok::semi)) {
+      nextToken();
+      addUnwrappedLine();
+      return;
+    }
+  } while (!eof());
+}
+
 void UnwrappedLineParser::addUnwrappedLine() {
   // Consume trailing comments.
   while (!eof() && FormatTok.NewlinesBefore == 0 &&
@@ -273,6 +288,14 @@ void UnwrappedLineParser::nextToken() {
 }
 
 void UnwrappedLineParser::parseToken() {
+  if (GreaterStashed) {
+    FormatTok.NewlinesBefore = 0;
+    FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation().getLocWithOffset(1);
+    FormatTok.WhiteSpaceLength = 0;
+    GreaterStashed = false;
+    return;
+  }
+
   FormatTok = FormatToken();
   Lex.LexFromRawLexer(FormatTok.Tok);
   FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation();
@@ -285,6 +308,11 @@ void UnwrappedLineParser::parseToken() {
     if (eof())
       return;
     Lex.LexFromRawLexer(FormatTok.Tok);
+  }
+
+  if (FormatTok.Tok.is(tok::greatergreater)) {
+    FormatTok.Tok.setKind(tok::greater);
+    GreaterStashed = true;
   }
 }
 

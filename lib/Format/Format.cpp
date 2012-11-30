@@ -28,17 +28,19 @@ namespace format {
 
 // FIXME: Move somewhere sane.
 struct TokenAnnotation {
-  enum TokenType { TT_Unknown, TT_TemplateOpener, TT_BinaryOperator };
+  enum TokenType { TT_Unknown, TT_TemplateOpener, TT_BinaryOperator,
+      TT_UnaryOperator };
+
   TokenType Type;
 
-  bool SpaceRequiredBefore;
-  bool CanBreakBefore;
   bool IsTernaryExprColon;
-  bool IsOperator;
 
   /// \brief The current parenthesis level, i.e. the number of opening minus
   /// the number of closing parenthesis le; of the current position.
   unsigned ParenLevel;
+
+  bool SpaceRequiredBefore;
+  bool CanBreakBefore;
 };
 
 using llvm::MutableArrayRef;
@@ -49,6 +51,7 @@ FormatStyle getLLVMStyle() {
   LLVMStyle.MaxEmptyLinesToKeep = 1;
   LLVMStyle.PointerAndReferenceBindToType = false;
   LLVMStyle.AccessModifierOffset = -2;
+  LLVMStyle.SplitTemplateClosingGreater = true;
   return LLVMStyle;
 }
 
@@ -58,6 +61,7 @@ FormatStyle getGoogleStyle() {
   GoogleStyle.MaxEmptyLinesToKeep = 1;
   GoogleStyle.PointerAndReferenceBindToType = true;
   GoogleStyle.AccessModifierOffset = -1;
+  GoogleStyle.SplitTemplateClosingGreater = false;
   return GoogleStyle;
 }
 
@@ -143,8 +147,8 @@ private:
     unsigned ParenLevel = Annotations[Index].ParenLevel;
 
     if (Line.Tokens[Index].Tok.is(tok::l_paren) ||
-        Line.Tokens[Index].Tok.is(tok::l_square) || (
-        Line.Tokens[Index].Tok.is(tok::less) && !Annotations[Index].IsOperator))
+        Line.Tokens[Index].Tok.is(tok::l_square) ||
+        Annotations[Index].Type == TokenAnnotation::TT_TemplateOpener)
       State.Indent.push_back(4 + Line.Level * 2);
 
     if (Newline) {
@@ -167,7 +171,7 @@ private:
       if (Line.Tokens[Index - 1].Tok.is(tok::l_paren))
         State.Indent[ParenLevel] = State.Column;
       if (Line.Tokens[Index - 1].Tok.is(tok::less) &&
-          !Annotations[Index - 1].IsOperator)
+          Annotations[Index - 1].Type == TokenAnnotation::TT_TemplateOpener)
         State.Indent[ParenLevel] = State.Column;
       if (Line.Tokens[Index].Tok.is(tok::colon)) {
         State.Indent[ParenLevel] = State.Column + 3;
@@ -318,24 +322,32 @@ public:
 
     bool parseAngle(unsigned Level) {
       while (Index < Tokens.size()) {
-        if (Tokens[Index].Tok.is(tok::greater))
+        if (Tokens[Index].Tok.is(tok::greater)) {
           Annotations[Index].Type = TokenAnnotation::TT_TemplateOpener;
+          Annotations[Index].ParenLevel = Level;
+          next();
           return true;
+        }
         if (Tokens[Index].Tok.is(tok::r_paren) ||
-            Tokens[Index].Tok.is(tok::r_brace))
+            Tokens[Index].Tok.is(tok::r_square))
           return false;
         if (Tokens[Index].Tok.is(tok::pipepipe) ||
-            Tokens[Index].Tok.is(tok::ampamp))
+            Tokens[Index].Tok.is(tok::ampamp) ||
+            Tokens[Index].Tok.is(tok::question) ||
+            Tokens[Index].Tok.is(tok::colon))
           return false;
         consumeToken(Level);
       } 
-      return consumeToken(Level);
+      return false;
     }
 
-    bool parseBraces(unsigned Level) {
+    bool parseParens(unsigned Level) {
       while (Index < Tokens.size()) {
-        if (Tokens[Index].Tok.is(tok::r_brace))
+        if (Tokens[Index].Tok.is(tok::r_paren)) {
+          Annotations[Index].ParenLevel = Level;
+          next();
           return true;
+        }
         if (Tokens[Index].Tok.is(tok::r_square))
           return false;
         consumeToken(Level);
@@ -345,8 +357,11 @@ public:
 
     bool parseSquare(unsigned Level) {
       while (Index < Tokens.size()) {
-        if (Tokens[Index].Tok.is(tok::r_brace))
+        if (Tokens[Index].Tok.is(tok::r_paren)) {
+          Annotations[Index].ParenLevel = Level;
+          next();
           return false;
+        }
         if (Tokens[Index].Tok.is(tok::r_square))
           return true;
         consumeToken(Level);
@@ -354,12 +369,13 @@ public:
       return false;
     }
 
-    bool consumeToken(unsigned Level) {
+    void consumeToken(unsigned Level) {
+      Annotations[Index].ParenLevel = Level;
       unsigned CurrentIndex = Index;
       next();
       switch(Tokens[CurrentIndex].Tok.getKind()) {
-      case tok::l_brace:
-        parseBraces(Level + 1);
+      case tok::l_paren:
+        parseParens(Level + 1);
         break;
       case tok::l_square:
         parseSquare(Level + 1);
@@ -367,8 +383,10 @@ public:
       case tok::less:
         if (parseAngle(Level + 1))
           Annotations[CurrentIndex].Type = TokenAnnotation::TT_TemplateOpener;
-        else
+        else {
           Annotations[CurrentIndex].Type = TokenAnnotation::TT_BinaryOperator;
+          Index = CurrentIndex + 1;
+        }
         break;
       case tok::greater:
         Annotations[CurrentIndex].Type = TokenAnnotation::TT_BinaryOperator;
@@ -376,7 +394,6 @@ public:
       default:
         break;
       }
-      return false;
     }
 
     void parseLine() {
@@ -386,7 +403,6 @@ public:
 
     void next() {
       ++Index;
-      Annotations.push_back(TokenAnnotation());
     }
 
   private:
@@ -397,38 +413,25 @@ public:
 
   void annotate() {
     Annotations.clear();
+    for (int i = 0, e = Line.Tokens.size(); i != e; ++i)
+      Annotations.push_back(TokenAnnotation());
     AnnotatingParser Parser(Line.Tokens, Annotations);
     Parser.parseLine();
+    //for (int i = 0, e = Line.Tokens.size(); i != e; ++i)
+    //  llvm::errs() << Annotations[i].ParenLevel << " ";
 
     bool IsTernaryExpr = false;
-    SmallVector<tok::TokenKind, 32> Parens;
     StringRef Text(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
                    Line.Tokens[0].Tok.getLength());
     for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
       if (Line.Tokens[i].Tok.is(tok::question))
         IsTernaryExpr = true;
       TokenAnnotation &Annotation = Annotations[i];
-      Annotation.IsOperator = false;
-      Annotation.ParenLevel = Parens.size();
-
-      const FormatToken &Token = Line.Tokens[i];
-      if (Token.Tok.is(tok::l_paren) || Token.Tok.is(tok::l_square)) {
-        Parens.push_back(Token.Tok.getKind());
-      } else if (Token.Tok.is(tok::r_paren) || Token.Tok.is(tok::r_square)) {
-        Parens.pop_back();
-      } else if (Token.Tok.is(tok::less)) {
-        Annotation.IsOperator = !isTemplateOpener(i);
-        if (!Annotation.IsOperator)
-          Parens.push_back(tok::less);
-      } else if (Token.Tok.is(tok::greater)) {
-        Annotation.IsOperator = Parens.back() != tok::less;
-        if (!Annotation.IsOperator)
-          Parens.pop_back();
-      }
 
       if (i != 0)
         Annotation.CanBreakBefore =
             canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
+
 
       if (Line.Tokens[i].Tok.is(tok::colon)) {
         if (Text == "case") {
@@ -442,8 +445,21 @@ public:
       } else if (i == 0) {
         Annotation.SpaceRequiredBefore = false;
       } else if (i != 0) {
-        if (Annotation.IsOperator || Annotations[i - 1].IsOperator) {
+        if (Line.Tokens[i - 1].Tok.is(tok::greater) &&
+            Line.Tokens[i].Tok.is(tok::greater)) {
+          if (Annotation.Type == TokenAnnotation::TT_TemplateOpener &&
+              Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener)
+            Annotation.SpaceRequiredBefore = Style.SplitTemplateClosingGreater;
+          else
+            Annotation.SpaceRequiredBefore = false;
+        } else if (
+            Annotation.Type == TokenAnnotation::TT_BinaryOperator ||
+            Annotations[i - 1].Type == TokenAnnotation::TT_BinaryOperator) {
           Annotation.SpaceRequiredBefore = true;
+        } else if (
+            Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener &&
+            Line.Tokens[i].Tok.is(tok::l_paren)) {
+          Annotation.SpaceRequiredBefore = false;
         } else {
           Annotation.SpaceRequiredBefore =
               spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
@@ -457,47 +473,6 @@ public:
   }
 
 private:
-  bool isTemplateOpener(unsigned Index) {
-    unsigned ParenCount = 0;
-    unsigned TemplateCount = 0;
-
-    for (unsigned i = Index, e = Line.Tokens.size(); i != e; ++i) {
-      switch(Line.Tokens[i].Tok.getKind()) {
-      case tok::ampamp:
-      case tok::pipepipe:
-        return false;
-        break;
-      case tok::l_paren:
-        ++ParenCount;
-        break;
-      case tok::r_paren:
-        if (ParenCount == 0)
-          return false;
-        --ParenCount;
-        break;
-      case tok::less:
-        ++TemplateCount;
-        break;
-      case tok::greater:
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        break;
-      case tok::greatergreater:
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        --TemplateCount;
-        if (TemplateCount == 0)
-          return ParenCount == 0;
-        break;
-      default:
-        break;
-      }
-    }
-    return false;
-  }
-
   bool isBinaryOperator(const FormatToken &Tok) {
     switch(Tok.Tok.getKind()) {
     case tok::star:

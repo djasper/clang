@@ -17,7 +17,8 @@ namespace format {
 
 class FormatTest : public ::testing::Test {
 protected:
-  std::string format(llvm::StringRef Code, unsigned offset, unsigned length) {
+  std::string format(llvm::StringRef Code, unsigned offset, unsigned length,
+                     const FormatStyle& Style) {
     RewriterTestContext Context;
     FileID ID = Context.createInMemoryFile("input.cc", Code);
     std::vector<CodeRange> Ranges(1, CodeRange(offset, length));
@@ -25,14 +26,15 @@ protected:
     LangOpts.CPlusPlus = 1;
     Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources, LangOpts);
     tooling::Replacements Replace =
-        reformat(getLLVMStyle(), Lex, Context.Sources, Ranges);
+        reformat(Style, Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
     //llvm::outs() << Context.getRewrittenText(ID) << "\n";
     return Context.getRewrittenText(ID);
   }
 
-  std::string format(llvm::StringRef Code) {
-    return format(Code, 0, Code.size());
+  std::string format(llvm::StringRef Code,
+                     const FormatStyle& Style = getLLVMStyle()) {
+    return format(Code, 0, Code.size(), Style);
   }
 
   void verifyFormat(llvm::StringRef Code) {
@@ -42,6 +44,15 @@ protected:
         WithoutFormat[i] = ' ';
     }
     EXPECT_EQ(Code.str(), format(WithoutFormat));
+  }
+
+  void verifyGoogleFormat(llvm::StringRef Code) {
+    std::string WithoutFormat(Code.str());
+    for (unsigned i = 0, e = WithoutFormat.size(); i != e; ++i) {
+      if (WithoutFormat[i] == '\n')
+        WithoutFormat[i] = ' ';
+    }
+    EXPECT_EQ(Code.str(), format(WithoutFormat, getGoogleStyle()));
   }
 };
 
@@ -212,6 +223,25 @@ TEST_F(FormatTest, Labels) {
 TEST_F(FormatTest, DerivedClass) {
   verifyFormat("class A : public B {\n"
                "};");
+}
+
+TEST_F(FormatTest, UnderstandsTemplateParameters) {
+  verifyFormat("A<int> a;");
+  verifyFormat("A<A<A<int> > > a;");
+  verifyFormat("A<A<A<int, 2>, 3>, 4> a;");
+  verifyFormat("bool x = a < 1 || 2 > a;");
+  verifyFormat("bool x = 5 < f<int>();");
+  verifyFormat("bool x = f<int>() > 5;");
+  verifyFormat("bool x = 5 < a<int>::x;");
+  verifyFormat("bool x = a < 4 ? a > 2 : false;");
+  verifyFormat("bool x = f() ? a < 2 : a > 2;");
+
+  verifyGoogleFormat("A<A<int>> a;");
+  verifyGoogleFormat("A<A<A<int>>> a;");
+  verifyGoogleFormat("A<A<A<A<int>>>> a;");
+
+  verifyFormat("test >> a >> b;");
+  verifyFormat("test << a >> b;");
 }
 
 //TEST_F(FormatTest, IncorrectDerivedClass) {
