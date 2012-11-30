@@ -214,6 +214,15 @@ TEST_F(FormatTest, DerivedClass) {
                "};");
 }
 
+TEST_F(FormatTest, DoWhile) {
+  verifyFormat("do {\n"
+               "  do_something();\n"
+               "} while(something());");
+  verifyFormat("do\n"
+               "  do_something();\n"
+               "while(something());");
+}
+
 //TEST_F(FormatTest, IncorrectDerivedClass) {
 //  verifyFormat("public B {\n"
 //               "};");

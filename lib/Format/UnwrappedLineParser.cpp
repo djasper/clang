@@ -129,6 +129,10 @@ void UnwrappedLineParser::parseStatement() {
           parseIfThenElse();
           return;
         }
+        if (Text == "do") {
+          parseDoWhile();
+          return;
+        }
         if (Text == "switch") {
           parseSwitch();
           return;
@@ -203,6 +207,25 @@ void UnwrappedLineParser::parseIfThenElse() {
   } else if (NeedsUnwrappedLine) {
     addUnwrappedLine();
   }
+}
+
+void UnwrappedLineParser::parseDoWhile() {
+  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  nextToken();
+  if (FormatTok.Tok.is(tok::l_brace)) {
+    parseBlock();
+  } else {
+    addUnwrappedLine();
+    ++Line.Level;
+    parseStatement();
+    --Line.Level;
+  }
+
+  assert(FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "while");
+  nextToken();
+  parseParens();
+  assert(FormatTok.Tok.is(tok::semi));
+  nextToken();
 }
 
 void UnwrappedLineParser::parseLabel() {
