@@ -38,22 +38,22 @@ void UnwrappedLineParser::parse() {
 
 void UnwrappedLineParser::parseLevel() {
   do {
-    switch(FormatTok.Tok.getKind()) {
-      case tok::hash:
-        parsePPDirective();
-        break;
-      case tok::comment:
-        parseComment();
-        break;
-      case tok::l_brace:
-        parseBlock();
-        addUnwrappedLine();
-        break;
-      case tok::r_brace:
-        return;
-      default:
-        parseStatement();
-        break;
+    switch (FormatTok.Tok.getKind()) {
+    case tok::hash:
+      parsePPDirective();
+      break;
+    case tok::comment:
+      parseComment();
+      break;
+    case tok::l_brace:
+      parseBlock();
+      addUnwrappedLine();
+      break;
+    case tok::r_brace:
+      return;
+    default:
+      parseStatement();
+      break;
     }
   } while (!eof());
 }
@@ -116,45 +116,45 @@ void UnwrappedLineParser::parseStatement() {
   do {
     ++TokenNumber;
     switch (FormatTok.Tok.getKind()) {
-      case tok::semi:
-        nextToken();
-        addUnwrappedLine();
+    case tok::semi:
+      nextToken();
+      addUnwrappedLine();
+      return;
+    case tok::l_paren:
+      parseParens();
+      break;
+    case tok::l_brace:
+      parseBlock();
+      addUnwrappedLine();
+      return;
+    case tok::raw_identifier:
+      Text = tokenText();
+      if (Text == "if") {
+        parseIfThenElse();
         return;
-      case tok::l_paren:
-        parseParens();
-        break;
-      case tok::l_brace:
-        parseBlock();
-        addUnwrappedLine();
+      }
+      if (Text == "switch") {
+        parseSwitch();
         return;
-      case tok::raw_identifier:
-        Text = tokenText();
-        if (Text == "if") {
-          parseIfThenElse();
-          return;
-        }
-        if (Text == "switch") {
-          parseSwitch();
-          return;
-        }
-        if (Text == "default") {
-          nextToken();
-          parseLabel();
-          return;
-        }
-        if (Text == "case") {
-          parseCaseLabel();
-          return;
-        }
+      }
+      if (Text == "default") {
         nextToken();
-        if (TokenNumber == 1 && FormatTok.Tok.is(tok::colon)) {
-          parseLabel();
-          return;
-        }
-        break;
-      default:
-        nextToken();
-        break;
+        parseLabel();
+        return;
+      }
+      if (Text == "case") {
+        parseCaseLabel();
+        return;
+      }
+      nextToken();
+      if (TokenNumber == 1 && FormatTok.Tok.is(tok::colon)) {
+        parseLabel();
+        return;
+      }
+      break;
+    default:
+      nextToken();
+      break;
     }
   } while (!eof());
 }
@@ -164,15 +164,15 @@ void UnwrappedLineParser::parseParens() {
   nextToken();
   do {
     switch (FormatTok.Tok.getKind()) {
-      case tok::l_paren:
-        parseParens();
-        break;
-      case tok::r_paren:
-        nextToken();
-        return;
-      default:
-        nextToken();
-        break;
+    case tok::l_paren:
+      parseParens();
+      break;
+    case tok::r_paren:
+      nextToken();
+      return;
+    default:
+      nextToken();
+      break;
     }
   } while (!eof());
 }
@@ -224,8 +224,8 @@ void UnwrappedLineParser::parseLabel() {
 }
 
 void UnwrappedLineParser::parseCaseLabel() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) &&
-         tokenText() == "case" && "'case' expected");
+  assert(FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "case" &&
+         "'case' expected");
   // TODO(alexfh): fix handling of complex expressions here.
   do {
     nextToken();
