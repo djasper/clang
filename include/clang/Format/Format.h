@@ -28,15 +28,6 @@ class SourceManager;
 
 namespace format {
 
-/// \brief A character range of source code.
-struct CodeRange {
-  CodeRange(unsigned Offset, unsigned Length)
-    : Offset(Offset), Length(Length) {}
-
-  unsigned Offset;
-  unsigned Length;
-};
-
 struct FormatStyle {
   /// \brief The column limit.
   unsigned ColumnLimit;
@@ -63,7 +54,7 @@ FormatStyle getGoogleStyle();
 /// TODO(alexfh): Document what unwrapped lines are.
 tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
                                SourceManager &SourceMgr,
-                               std::vector<CodeRange> Ranges);
+                               std::vector<CharSourceRange> Ranges);
 
 } // end namespace format
 } // end namespace clang

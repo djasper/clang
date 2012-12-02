@@ -598,7 +598,7 @@ private:
 class Formatter : public UnwrappedLineConsumer {
 public:
   Formatter(const FormatStyle &Style, Lexer &Lex, SourceManager &SourceMgr,
-            const std::vector<CodeRange> &Ranges)
+            const std::vector<CharSourceRange> &Ranges)
       : Style(Style),
         Lex(Lex),
         SourceMgr(SourceMgr),
@@ -616,16 +616,13 @@ private:
     if (TheLine.Tokens.size() == 0)
       return;
 
-    unsigned LineBegin =
-        SourceMgr.getFileOffset(TheLine.Tokens.front().Tok.getLocation());
+    SourceLocation LineBegin = TheLine.Tokens.front().Tok.getLocation();
     // FIXME: Add length of last token.
-    unsigned LineEnd =
-        SourceMgr.getFileOffset(TheLine.Tokens.back().Tok.getLocation());
+    SourceLocation LineEnd = TheLine.Tokens.back().Tok.getLocation();
 
     for (unsigned i = 0, e = Ranges.size(); i != e; ++i) {
-      unsigned RangeBegin = Ranges[i].Offset;
-      unsigned RangeEnd = RangeBegin + Ranges[i].Length;
-      if (LineEnd < RangeBegin || LineBegin > RangeEnd)
+      if (SourceMgr.isBeforeInTranslationUnit(LineEnd, Ranges[i].getBegin()) ||
+          SourceMgr.isBeforeInTranslationUnit(Ranges[i].getEnd(), LineBegin))
         continue;
 
       TokenAnnotator Annotator(TheLine, Style, SourceMgr);
@@ -641,12 +638,12 @@ private:
   Lexer &Lex;
   SourceManager &SourceMgr;
   tooling::Replacements Replaces;
-  std::vector<CodeRange> Ranges;
+  std::vector<CharSourceRange> Ranges;
 };
 
 tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
                                SourceManager &SourceMgr,
-                               std::vector<CodeRange> Ranges) {
+                               std::vector<CharSourceRange> Ranges) {
   Formatter formatter(Style, Lex, SourceMgr, Ranges);
   return formatter.format();
 }

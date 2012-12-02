@@ -17,11 +17,15 @@ namespace format {
 
 class FormatTest : public ::testing::Test {
 protected:
-  std::string format(llvm::StringRef Code, unsigned offset, unsigned length,
+  std::string format(llvm::StringRef Code, unsigned Offset, unsigned Length,
                      const FormatStyle &Style) {
     RewriterTestContext Context;
     FileID ID = Context.createInMemoryFile("input.cc", Code);
-    std::vector<CodeRange> Ranges(1, CodeRange(offset, length));
+    SourceLocation Start =
+        Context.Sources.getLocForStartOfFile(ID).getLocWithOffset(Offset);
+    std::vector<CharSourceRange> Ranges(
+        1,
+        CharSourceRange::getCharRange(Start, Start.getLocWithOffset(Length)));
     LangOptions LangOpts;
     LangOpts.CPlusPlus = 1;
     Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources, LangOpts);
