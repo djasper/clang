@@ -103,10 +103,8 @@ public:
     for (unsigned i = 1, n = Line.Tokens.size(); i != n; ++i) {
       unsigned NoBreak = calcPenalty(State, false, UINT_MAX);
       unsigned Break = calcPenalty(State, true, NoBreak);
-      //llvm::errs() << NoBreak << " " << Break << "\n";
       addToken(Break < NoBreak, false, State);
     }
-    //llvm::errs() << count << "\n";
   }
 
 private:
@@ -309,12 +307,9 @@ private:
       if (Newlines == 0 && Offset != 0)
         Newlines = 1;
       unsigned Indent = Line.Level * 2;
-      if (Token.Tok.is(tok::raw_identifier)) {
-        StringRef Text(SourceMgr.getCharacterData(Token.Tok.getLocation()),
-                       Token.Tok.getLength());
-        if (Text == "public" || Text == "protected" || Text == "private")
-          Indent += Style.AccessModifierOffset;
-      }
+      if (Token.Tok.is(tok::kw_public) || Token.Tok.is(tok::kw_protected) ||
+          Token.Tok.is(tok::kw_private))
+        Indent += Style.AccessModifierOffset;
       replaceWhitespace(Token, Newlines, Indent);
     }
   }
@@ -420,16 +415,11 @@ public:
       case tok::greater:
         Annotations[CurrentIndex].Type = TokenAnnotation::TT_BinaryOperator;
         break;
-      case tok::raw_identifier: {
-        StringRef Text(
-            SourceMgr.getCharacterData(Tokens[CurrentIndex].Tok.getLocation()),
-            Tokens[CurrentIndex].Tok.getLength());
-        if (Text == "operator") {
-          if (!Tokens[Index].Tok.is(tok::l_paren))
-            Annotations[Index].Type = TokenAnnotation::TT_OverloadedOperator;
-          next();
-        }
-      }
+      case tok::kw_operator:
+        if (!Tokens[Index].Tok.is(tok::l_paren))
+          Annotations[Index].Type = TokenAnnotation::TT_OverloadedOperator;
+        next();
+        break;
       default:
         break;
       }
@@ -460,12 +450,8 @@ public:
 
     AnnotatingParser Parser(SourceMgr, Line.Tokens, Annotations);
     Parser.parseLine();
-    //for (int i = 0, e = Line.Tokens.size(); i != e; ++i)
-    //  llvm::errs() << Annotations[i].ParenLevel << " ";
 
     bool IsTernaryExpr = false;
-    StringRef Text(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
-                   Line.Tokens[0].Tok.getLength());
     for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
       if (Line.Tokens[i].Tok.is(tok::question))
         IsTernaryExpr = true;
@@ -476,7 +462,7 @@ public:
             canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
 
       if (Line.Tokens[i].Tok.is(tok::colon)) {
-        if (Text == "case") {
+        if (Line.Tokens[0].Tok.is(tok::kw_case)) {
           Annotation.SpaceRequiredBefore = false;
         } else if (i == e - 1) {
           Annotation.SpaceRequiredBefore = false;
@@ -547,11 +533,7 @@ private:
   }
 
   bool isIfForOrWhile(Token Tok) {
-    if (Tok.getKind() != tok::raw_identifier)
-      return false;
-    StringRef Data(SourceMgr.getCharacterData(Tok.getLocation()),
-                   Tok.getLength());
-    return Data == "for" || Data == "while" || Data == "if" || Data == "switch";
+    return Tok.is(tok::kw_if) || Tok.is(tok::kw_for) || Tok.is(tok::kw_while);
   }
 
   bool spaceRequiredBetween(Token Left, Token Right) {
@@ -580,10 +562,10 @@ private:
       return false;
     if (Left.is(tok::colon) || Right.is(tok::colon))
       return true;
-    if ((Left.is(tok::plusplus) && Right.is(tok::raw_identifier)) ||
-        (Left.is(tok::raw_identifier) && Right.is(tok::plusplus)) ||
-        (Left.is(tok::minusminus) && Right.is(tok::raw_identifier)) ||
-        (Left.is(tok::raw_identifier) && Right.is(tok::minusminus)))
+    if ((Left.is(tok::plusplus) && Right.isAnyIdentifier()) ||
+        (Left.isAnyIdentifier() && Right.is(tok::plusplus)) ||
+        (Left.is(tok::minusminus) && Right.isAnyIdentifier()) ||
+        (Left.isAnyIdentifier() && Right.is(tok::minusminus)))
       return false;
     if (Left.is(tok::l_paren))
       return false;
@@ -592,7 +574,7 @@ private:
     if (Right.is(tok::r_paren) || Right.is(tok::semi) || Right.is(tok::comma))
       return false;
     if (Right.is(tok::l_paren)) {
-      return !Left.is(tok::raw_identifier) || isIfForOrWhile(Left);
+      return !Left.isAnyIdentifier() || isIfForOrWhile(Left);
     }
     return true;
   }

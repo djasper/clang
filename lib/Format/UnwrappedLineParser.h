@@ -20,6 +20,7 @@
 #define LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
 
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/IdentifierTable.h"
 #include "clang/Lex/Lexer.h"
 
 namespace clang {
@@ -107,6 +108,7 @@ private:
 
   Lexer &Lex;
   SourceManager &SourceMgr;
+  IdentifierTable IdentTable;
   UnwrappedLineConsumer &Callback;
 };
 
