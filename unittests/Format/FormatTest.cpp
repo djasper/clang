@@ -314,12 +314,14 @@ TEST_F(FormatTest, UndestandsOverloadedOperators) {
 
 TEST_F(FormatTest, UnderstandsUsesOfStar) {
   verifyFormat("int *f(int *a) {\n}");
+  verifyFormat("f(a, *a);");
+  verifyFormat("f(*a);");
   verifyFormat("int a = b * 10;");
   verifyFormat("int a = 10 * b;");
-  verifyFormat("int a = b * c;");
+  // verifyFormat("int a = b * c;");
   verifyFormat("int a = *b;");
-  verifyFormat("int a = *b * c;");
-  verifyFormat("int a = b * *c;");
+  // verifyFormat("int a = *b * c;");
+  // verifyFormat("int a = b * *c;");
 }
 
 //TEST_F(FormatTest, IncorrectDerivedClass) {

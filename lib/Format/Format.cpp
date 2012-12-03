@@ -488,6 +488,9 @@ public:
         }
       } else if (Annotations[i - 1].Type == TokenAnnotation::TT_UnaryOperator) {
         Annotation.SpaceRequiredBefore = false;
+      } else if (Annotation.Type == TokenAnnotation::TT_UnaryOperator) {
+        Annotation.SpaceRequiredBefore =
+            Line.Tokens[i - 1].Tok.isNot(tok::l_paren);
       } else if (Line.Tokens[i - 1].Tok.is(tok::greater) &&
                  Line.Tokens[i].Tok.is(tok::greater)) {
         if (Annotation.Type == TokenAnnotation::TT_TemplateOpener &&
@@ -569,7 +572,8 @@ private:
     if (Index == Annotations.size())
       return TokenAnnotation::TT_Unknown;
 
-    if (Index == 0 ||
+    if (Index == 0 || Line.Tokens[Index - 1].Tok.is(tok::l_paren) ||
+        Line.Tokens[Index - 1].Tok.is(tok::comma) ||
         Annotations[Index - 1].Type == TokenAnnotation::TT_BinaryOperator)
       return TokenAnnotation::TT_UnaryOperator;
 
