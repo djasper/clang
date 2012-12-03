@@ -126,6 +126,9 @@ void UnwrappedLineParser::parseStatement() {
     case tok::kw_if:
       parseIfThenElse();
       return;
+    case tok::kw_do:
+      parseDoWhileLoop();
+      return;
     case tok::kw_switch:
       parseSwitch();
       return;
@@ -200,6 +203,14 @@ void UnwrappedLineParser::parseIfThenElse() {
   }
 }
 
+void UnwrappedLineParser::parseDoWhileLoop() {
+  nextToken();
+  assert(FormatTok.Tok.is(tok::l_brace) && "'{' expected");
+  parseBlock();
+  nextToken();
+  parseStatement();
+}
+
 void UnwrappedLineParser::parseLabel() {
   // TODO: remove all asserts!!!!
   assert(FormatTok.Tok.is(tok::colon) && "':' expected");
@@ -215,7 +226,7 @@ void UnwrappedLineParser::parseLabel() {
 }
 
 void UnwrappedLineParser::parseCaseLabel() {
-  assert (FormatTok.Tok.is (tok::kw_case) && "'case' expected");
+  assert(FormatTok.Tok.is(tok::kw_case) && "'case' expected");
   // TODO(alexfh): fix handling of complex expressions here.
   do {
     nextToken();
@@ -316,5 +327,5 @@ StringRef UnwrappedLineParser::tokenText() {
   return Data;
 }
 
-} // end namespace format
-} // end namespace clang
+}  // end namespace format
+}  // end namespace clang

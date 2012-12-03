@@ -89,6 +89,7 @@ private:
   void parseStatement();
   void parseParens();
   void parseIfThenElse();
+  void parseDoWhileLoop();
   void parseLabel();
   void parseCaseLabel();
   void parseSwitch();
