@@ -323,6 +323,8 @@ private:
   OptimizationParameters Parameters;
 };
 
+/// \brief Determines extra information about the tokens comprising an
+/// \c UnwrappedLine.
 class TokenAnnotator {
 public:
   TokenAnnotator(const UnwrappedLine &Line, const FormatStyle &Style,
@@ -332,6 +334,11 @@ public:
         SourceMgr(SourceMgr) {
   }
 
+  /// \brief A parser that gathers additional information about tokens.
+  ///
+  /// The \c TokenAnnotator tries to matches parenthesis and square brakets and
+  /// store a parenthesis levels. It also tries to resolve matching "<" and ">"
+  /// into template parameter lists.
   class AnnotatingParser {
   public:
     AnnotatingParser(const SourceManager &SourceMgr,

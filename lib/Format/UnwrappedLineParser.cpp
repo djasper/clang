@@ -25,7 +25,8 @@ namespace format {
 
 UnwrappedLineParser::UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
                                          UnwrappedLineConsumer &Callback)
-    : Lex(Lex),
+    : GreaterStashed(false),
+      Lex(Lex),
       SourceMgr(SourceMgr),
       IdentTable(Lex.getLangOpts()),
       Callback(Callback) {
