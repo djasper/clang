@@ -25,8 +25,10 @@ namespace format {
 
 UnwrappedLineParser::UnwrappedLineParser(Lexer &Lex, SourceManager &SourceMgr,
                                          UnwrappedLineConsumer &Callback)
-    : Lex(Lex),
+    : GreaterStashed(false),
+      Lex(Lex),
       SourceMgr(SourceMgr),
+      IdentTable(Lex.getLangOpts()),
       Callback(Callback) {
   Lex.SetKeepWhitespaceMode(true);
 }
@@ -38,22 +40,22 @@ void UnwrappedLineParser::parse() {
 
 void UnwrappedLineParser::parseLevel() {
   do {
-    switch(FormatTok.Tok.getKind()) {
-      case tok::hash:
-        parsePPDirective();
-        break;
-      case tok::comment:
-        parseComment();
-        break;
-      case tok::l_brace:
-        parseBlock();
-        addUnwrappedLine();
-        break;
-      case tok::r_brace:
-        return;
-      default:
-        parseStatement();
-        break;
+    switch (FormatTok.Tok.getKind()) {
+    case tok::hash:
+      parsePPDirective();
+      break;
+    case tok::comment:
+      parseComment();
+      break;
+    case tok::l_brace:
+      parseBlock();
+      addUnwrappedLine();
+      break;
+    case tok::r_brace:
+      return;
+    default:
+      parseStatement();
+      break;
     }
   } while (!eof());
 }
@@ -62,12 +64,7 @@ void UnwrappedLineParser::parseBlock() {
   nextToken();
 
   // FIXME: Remove this hack to handle namespaces.
-  bool IsNamespace = false;
-  if (Line.Tokens.size() > 0) {
-    StringRef Data(SourceMgr.getCharacterData(Line.Tokens[0].Tok.getLocation()),
-                   Line.Tokens[0].Tok.getLength());
-    IsNamespace = Data == "namespace";
-  }
+  bool IsNamespace = Line.Tokens[0].Tok.is(tok::kw_namespace);
 
   addUnwrappedLine();
 
@@ -103,58 +100,56 @@ void UnwrappedLineParser::parseComment() {
 }
 
 void UnwrappedLineParser::parseStatement() {
-  StringRef Text = tokenText();
-  if (Text == "public" || Text == "protected" || Text == "private") {
+  if (FormatTok.Tok.is(tok::kw_public) || FormatTok.Tok.is(tok::kw_protected) ||
+      FormatTok.Tok.is(tok::kw_private)) {
     parseAccessSpecifier();
+    return;
+  }
+  if (FormatTok.Tok.is(tok::kw_enum)) {
+    parseEnum();
     return;
   }
   int TokenNumber = 0;
   do {
     ++TokenNumber;
     switch (FormatTok.Tok.getKind()) {
-      case tok::semi:
-        nextToken();
-        addUnwrappedLine();
+    case tok::semi:
+      nextToken();
+      addUnwrappedLine();
+      return;
+    case tok::l_paren:
+      parseParens();
+      break;
+    case tok::l_brace:
+      parseBlock();
+      addUnwrappedLine();
+      return;
+    case tok::kw_if:
+      parseIfThenElse();
+      return;
+    case tok::kw_do:
+      parseDoWhile();
+      return;
+    case tok::kw_switch:
+      parseSwitch();
+      return;
+    case tok::kw_default:
+      nextToken();
+      parseLabel();
+      return;
+    case tok::kw_case:
+      parseCaseLabel();
+      return;
+    case tok::raw_identifier:
+      nextToken();
+      break;
+    default:
+      nextToken();
+      if (TokenNumber == 1 && FormatTok.Tok.is(tok::colon)) {
+        parseLabel();
         return;
-      case tok::l_paren:
-        parseParens();
-        break;
-      case tok::l_brace:
-        parseBlock();
-        addUnwrappedLine();
-        return;
-      case tok::raw_identifier:
-        Text = tokenText();
-        if (Text == "if") {
-          parseIfThenElse();
-          return;
-        }
-        if (Text == "do") {
-          parseDoWhile();
-          return;
-        }
-        if (Text == "switch") {
-          parseSwitch();
-          return;
-        }
-        if (Text == "default") {
-          nextToken();
-          parseLabel();
-          return;
-        }
-        if (Text == "case") {
-          parseCaseLabel();
-          return;
-        }
-        nextToken();
-        if (TokenNumber == 1 && FormatTok.Tok.is(tok::colon)) {
-          parseLabel();
-          return;
-        }
-        break;
-      default:
-        nextToken();
-        break;
+      }
+      break;
     }
   } while (!eof());
 }
@@ -164,21 +159,21 @@ void UnwrappedLineParser::parseParens() {
   nextToken();
   do {
     switch (FormatTok.Tok.getKind()) {
-      case tok::l_paren:
-        parseParens();
-        break;
-      case tok::r_paren:
-        nextToken();
-        return;
-      default:
-        nextToken();
-        break;
+    case tok::l_paren:
+      parseParens();
+      break;
+    case tok::r_paren:
+      nextToken();
+      return;
+    default:
+      nextToken();
+      break;
     }
   } while (!eof());
 }
 
 void UnwrappedLineParser::parseIfThenElse() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  assert(FormatTok.Tok.is(tok::kw_if) && "'if' expected");
   nextToken();
   parseParens();
   bool NeedsUnwrappedLine = false;
@@ -191,12 +186,12 @@ void UnwrappedLineParser::parseIfThenElse() {
     parseStatement();
     --Line.Level;
   }
-  if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "else") {
+  if (FormatTok.Tok.is(tok::kw_else)) {
     nextToken();
     if (FormatTok.Tok.is(tok::l_brace)) {
       parseBlock();
       addUnwrappedLine();
-    } else if (FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "if") {
+    } else if (FormatTok.Tok.is(tok::kw_if)) {
       parseIfThenElse();
     } else {
       addUnwrappedLine();
@@ -210,7 +205,7 @@ void UnwrappedLineParser::parseIfThenElse() {
 }
 
 void UnwrappedLineParser::parseDoWhile() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  assert(FormatTok.Tok.is(tok::kw_do) && "'do' expected");
   nextToken();
   if (FormatTok.Tok.is(tok::l_brace)) {
     parseBlock();
@@ -221,11 +216,9 @@ void UnwrappedLineParser::parseDoWhile() {
     --Line.Level;
   }
 
-  assert(FormatTok.Tok.is(tok::raw_identifier) && tokenText() == "while");
+  assert(FormatTok.Tok.is(tok::kw_while) && "'while' expected");
   nextToken();
-  parseParens();
-  assert(FormatTok.Tok.is(tok::semi));
-  nextToken();
+  parseStatement();
 }
 
 void UnwrappedLineParser::parseLabel() {
@@ -243,8 +236,7 @@ void UnwrappedLineParser::parseLabel() {
 }
 
 void UnwrappedLineParser::parseCaseLabel() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) &&
-         tokenText() == "case" && "'case' expected");
+  assert(FormatTok.Tok.is(tok::kw_case) && "'case' expected");
   // TODO(alexfh): fix handling of complex expressions here.
   do {
     nextToken();
@@ -253,7 +245,7 @@ void UnwrappedLineParser::parseCaseLabel() {
 }
 
 void UnwrappedLineParser::parseSwitch() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
+  assert(FormatTok.Tok.is(tok::kw_switch) && "'switch' expected");
   nextToken();
   parseParens();
   if (FormatTok.Tok.is(tok::l_brace)) {
@@ -268,10 +260,20 @@ void UnwrappedLineParser::parseSwitch() {
 }
 
 void UnwrappedLineParser::parseAccessSpecifier() {
-  assert(FormatTok.Tok.is(tok::raw_identifier) && "Identifier expected");
   nextToken();
   nextToken();
   addUnwrappedLine();
+}
+
+void UnwrappedLineParser::parseEnum() {
+  do {
+    nextToken();
+    if (FormatTok.Tok.is(tok::semi)) {
+      nextToken();
+      addUnwrappedLine();
+      return;
+    }
+  } while (!eof());
 }
 
 void UnwrappedLineParser::addUnwrappedLine() {
@@ -296,6 +298,14 @@ void UnwrappedLineParser::nextToken() {
 }
 
 void UnwrappedLineParser::parseToken() {
+  if (GreaterStashed) {
+    FormatTok.NewlinesBefore = 0;
+    FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation().getLocWithOffset(1);
+    FormatTok.WhiteSpaceLength = 0;
+    GreaterStashed = false;
+    return;
+  }
+
   FormatTok = FormatToken();
   Lex.LexFromRawLexer(FormatTok.Tok);
   FormatTok.WhiteSpaceStart = FormatTok.Tok.getLocation();
@@ -309,6 +319,16 @@ void UnwrappedLineParser::parseToken() {
       return;
     Lex.LexFromRawLexer(FormatTok.Tok);
   }
+
+  if (FormatTok.Tok.is(tok::raw_identifier)) {
+    const IdentifierInfo &Info = IdentTable.get(tokenText());
+    FormatTok.Tok.setKind(Info.getTokenID());
+  }
+
+  if (FormatTok.Tok.is(tok::greatergreater)) {
+    FormatTok.Tok.setKind(tok::greater);
+    GreaterStashed = true;
+  }
 }
 
 StringRef UnwrappedLineParser::tokenText() {
@@ -317,5 +337,5 @@ StringRef UnwrappedLineParser::tokenText() {
   return Data;
 }
 
-} // end namespace format
-} // end namespace clang
+}  // end namespace format
+}  // end namespace clang

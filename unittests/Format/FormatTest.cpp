@@ -17,22 +17,27 @@ namespace format {
 
 class FormatTest : public ::testing::Test {
 protected:
-  std::string format(llvm::StringRef Code, unsigned offset, unsigned length) {
+  std::string format(llvm::StringRef Code, unsigned Offset, unsigned Length,
+                     const FormatStyle &Style) {
     RewriterTestContext Context;
     FileID ID = Context.createInMemoryFile("input.cc", Code);
-    std::vector<CodeRange> Ranges(1, CodeRange(offset, length));
+    SourceLocation Start =
+        Context.Sources.getLocForStartOfFile(ID).getLocWithOffset(Offset);
+    std::vector<CharSourceRange> Ranges(
+        1,
+        CharSourceRange::getCharRange(Start, Start.getLocWithOffset(Length)));
     LangOptions LangOpts;
     LangOpts.CPlusPlus = 1;
     Lexer Lex(ID, Context.Sources.getBuffer(ID), Context.Sources, LangOpts);
     tooling::Replacements Replace =
-        reformat(getLLVMStyle(), Lex, Context.Sources, Ranges);
+        reformat(Style, Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
-    //llvm::outs() << Context.getRewrittenText(ID) << "\n";
     return Context.getRewrittenText(ID);
   }
 
-  std::string format(llvm::StringRef Code) {
-    return format(Code, 0, Code.size());
+  std::string format(llvm::StringRef Code,
+                     const FormatStyle &Style = getLLVMStyle()) {
+    return format(Code, 0, Code.size(), Style);
   }
 
   void verifyFormat(llvm::StringRef Code) {
@@ -42,6 +47,15 @@ protected:
         WithoutFormat[i] = ' ';
     }
     EXPECT_EQ(Code.str(), format(WithoutFormat));
+  }
+
+  void verifyGoogleFormat(llvm::StringRef Code) {
+    std::string WithoutFormat(Code.str());
+    for (unsigned i = 0, e = WithoutFormat.size(); i != e; ++i) {
+      if (WithoutFormat[i] == '\n')
+        WithoutFormat[i] = ' ';
+    }
+    EXPECT_EQ(Code.str(), format(WithoutFormat, getGoogleStyle()));
   }
 };
 
@@ -82,15 +96,14 @@ TEST_F(FormatTest, FormatsNestedCall) {
 TEST_F(FormatTest, FormatsAwesomeMethodCall) {
   verifyFormat(
       "SomeLongMethodName(SomeReallyLongMethod(CallOtherReallyLongMethod(\n"
-      "    parameter, parameter, parameter)), SecondLongCall(some_parameter));");
+      "    parameter, parameter, parameter)), SecondLongCall(parameter));");
 }
 
 TEST_F(FormatTest, FormatsFunctionDefinition) {
-  verifyFormat(
-      "void f(int a, int b, int c, int d, int e, int f, int g,"
-          " int h, int j, int f,\n"
-      "       int c, int ddddddddddddd) {\n"
-      "}");
+  verifyFormat("void f(int a, int b, int c, int d, int e, int f, int g,"
+               " int h, int j, int f,\n"
+               "       int c, int ddddddddddddd) {\n"
+               "}");
 }
 
 TEST_F(FormatTest, FormatIfWithoutCompountStatement) {
@@ -100,41 +113,42 @@ TEST_F(FormatTest, FormatIfWithoutCompountStatement) {
 }
 
 TEST_F(FormatTest, ParseIfThenElse) {
-  verifyFormat(
-      "if (true)\n"
-      "  if (true)\n"
-      "    if (true)\n"
-      "      f();\n"
-      "    else\n"
-      "      g();\n"
-      "  else\n"
-      "    h();\n"
-      "else\n"
-      "  i();");
-  verifyFormat(
-      "if (true)\n"
-      "  if (true)\n"
-      "    if (true) {\n"
-      "      if (true)\n"
-      "        f();\n"
-      "    } else {\n"
-      "      g();\n"
-      "    }\n"
-      "  else\n"
-      "    h();\n"
-      "else {\n"
-      "  i();\n"
-      "}");
+  verifyFormat("if (true)\n"
+               "  if (true)\n"
+               "    if (true)\n"
+               "      f();\n"
+               "    else\n"
+               "      g();\n"
+               "  else\n"
+               "    h();\n"
+               "else\n"
+               "  i();");
+  verifyFormat("if (true)\n"
+               "  if (true)\n"
+               "    if (true) {\n"
+               "      if (true)\n"
+               "        f();\n"
+               "    } else {\n"
+               "      g();\n"
+               "    }\n"
+               "  else\n"
+               "    h();\n"
+               "else {\n"
+               "  i();\n"
+               "}");
 }
 
 TEST_F(FormatTest, UnderstandsSingleLineComments) {
-  EXPECT_EQ(
-      "// line 1\n// line 2\nvoid f() {\n}\n",
-      format("// line 1\n// line 2\nvoid f() {}\n"));
+  EXPECT_EQ("// line 1\n// line 2\nvoid f() {\n}\n",
+            format("// line 1\n// line 2\nvoid f() {}\n"));
 
-  EXPECT_EQ(
-      "void f() {\n  // Doesn't do anything\n}",
-      format("void f() {\n// Doesn't do anything\n}"));
+  EXPECT_EQ("void f() {\n  // Doesn't do anything\n}",
+            format("void f() {\n// Doesn't do anything\n}"));
+
+  EXPECT_EQ("int i  // This is a fancy variable\n    = 5;",
+            format("int i  // This is a fancy variable\n= 5;"));
+
+  verifyFormat("f(/*test=*/ true);");
 }
 
 TEST_F(FormatTest, DoesNotBreakSemiAfterClassDecl) {
@@ -168,10 +182,17 @@ TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
                "  void f() {\n"
                "  }\n"
                "};");
+  verifyGoogleFormat("class A {\n"
+                     " public:\n"
+                     " protected:\n"
+                     " private:\n"
+                     "  void f() {\n"
+                     "  }\n"
+                     "};");
 }
 
 TEST_F(FormatTest, SwitchStatement) {
-  verifyFormat("switch(x) {\n"
+  verifyFormat("switch (x) {\n"
                "case 1:\n"
                "  f();\n"
                "  break;\n"
@@ -183,13 +204,13 @@ TEST_F(FormatTest, SwitchStatement) {
                "  g();\n"
                "  break;\n"
                "}");
-  verifyFormat("switch(x) {\n"
+  verifyFormat("switch (x) {\n"
                "case 1: {\n"
                "  f();\n"
                "  break;\n"
                "}\n"
                "}");
-  verifyFormat("switch(test)\n"
+  verifyFormat("switch (test)\n"
                "  ;");
 }
 
@@ -217,10 +238,88 @@ TEST_F(FormatTest, DerivedClass) {
 TEST_F(FormatTest, DoWhile) {
   verifyFormat("do {\n"
                "  do_something();\n"
-               "} while(something());");
+               "} while (something());");
   verifyFormat("do\n"
                "  do_something();\n"
-               "while(something());");
+               "while (something());");
+}
+
+TEST_F(FormatTest, BreaksDesireably) {
+  verifyFormat("if (aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
+               "    aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
+               "    aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa)) {\n};");
+
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,\n"
+      "                      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n}");
+
+  verifyFormat("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa(\n"
+               "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa));");
+}
+
+TEST_F(FormatTest, AlignsStringLiterals) {
+  verifyFormat("loooooooooooooooooooooooooongFunction(\"short literal \"\n"
+               "                                      \"short literal\");");
+  verifyFormat(
+      "looooooooooooooooooooooooongFunction(\n"
+      "    \"short literal\"\n"
+      "    \"looooooooooooooooooooooooooooooooooooooooooooooooong literal\");");
+}
+
+TEST_F(FormatTest, UnderstandsEquals) {
+  verifyFormat(
+      "aaaaaaaaaaaaaaaaa =\n"
+      "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;");
+  verifyFormat(
+      "if (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
+      "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+      "}");
+  verifyFormat(
+      "if (a) {\n"
+      "} else if (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
+      "               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+      "}");
+
+  verifyFormat("if (int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
+               "        100000000 + 100000000) {\n}");
+}
+
+TEST_F(FormatTest, UnderstandsTemplateParameters) {
+  verifyFormat("A<int> a;");
+  verifyFormat("A<A<A<int> > > a;");
+  verifyFormat("A<A<A<int, 2>, 3>, 4> a;");
+  verifyFormat("bool x = a < 1 || 2 > a;");
+  verifyFormat("bool x = 5 < f<int>();");
+  verifyFormat("bool x = f<int>() > 5;");
+  verifyFormat("bool x = 5 < a<int>::x;");
+  verifyFormat("bool x = a < 4 ? a > 2 : false;");
+  verifyFormat("bool x = f() ? a < 2 : a > 2;");
+
+  verifyGoogleFormat("A<A<int>> a;");
+  verifyGoogleFormat("A<A<A<int>>> a;");
+  verifyGoogleFormat("A<A<A<A<int>>>> a;");
+
+  verifyFormat("test >> a >> b;");
+  verifyFormat("test << a >> b;");
+}
+
+TEST_F(FormatTest, UndestandsUnaryOperators) {
+  verifyFormat("int a = -2;");
+}
+
+TEST_F(FormatTest, UndestandsOverloadedOperators) {
+  verifyFormat("bool operator<() {\n}");
+}
+
+TEST_F(FormatTest, UnderstandsUsesOfStar) {
+  verifyFormat("int *f(int *a) {\n}");
+  verifyFormat("int a = b * 10;");
+  verifyFormat("int a = 10 * b;");
+  verifyFormat("int a = b * c;");
+  verifyFormat("int a = *b;");
+  verifyFormat("int a = *b * c;");
+  verifyFormat("int a = b * *c;");
 }
 
 //TEST_F(FormatTest, IncorrectDerivedClass) {
@@ -228,5 +327,5 @@ TEST_F(FormatTest, DoWhile) {
 //               "};");
 //}
 
-} // end namespace tooling
-} // end namespace clang
+}  // end namespace tooling
+}  // end namespace clang

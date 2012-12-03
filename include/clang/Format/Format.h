@@ -28,15 +28,8 @@ class SourceManager;
 
 namespace format {
 
-/// \brief A character range of source code.
-struct CodeRange {
-  CodeRange(unsigned Offset, unsigned Length)
-    : Offset(Offset), Length(Length) {}
-
-  unsigned Offset;
-  unsigned Length;
-};
-
+/// \brief The \c FormatStyle is used to configure the formatting to follow
+/// specific guidelines.
 struct FormatStyle {
   /// \brief The column limit.
   unsigned ColumnLimit;
@@ -49,21 +42,34 @@ struct FormatStyle {
 
   /// \brief The extra indent or outdent of access modifiers (e.g.: public:).
   int AccessModifierOffset;
+
+  /// \brief Split two consecutive closing '>' by a space, i.e. use
+  /// A<A<int> > instead of A<A<int>>.
+  bool SplitTemplateClosingGreater;
 };
 
+/// \brief Returns a format style complying with the LLVM coding standards:
+/// http://llvm.org/docs/CodingStandards.html.
 FormatStyle getLLVMStyle();
 
+/// \brief Returns a format style complying with Google's C++ style guide:
+/// http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml.
 FormatStyle getGoogleStyle();
 
-/// \brief Reformats the given Ranges in the token stream coming out of \c Lex.
+/// \brief Reformats the given \p Ranges in the token stream coming out of
+/// \c Lex.
 ///
-/// Ranges are extended to include full unwrapped lines.
-/// TODO(alexfh): Document what unwrapped lines are.
+/// Each range is extended on either end to its next bigger logic unit, i.e.
+/// everything that might influence its formatting or might be influenced by its
+/// formatting.
+///
+/// Returns the \c Replacements necessary to make all \p Ranges comply with
+/// \p Style.
 tooling::Replacements reformat(const FormatStyle &Style, Lexer &Lex,
                                SourceManager &SourceMgr,
-                               std::vector<CodeRange> Ranges);
+                               std::vector<CharSourceRange> Ranges);
 
-} // end namespace format
-} // end namespace clang
+}  // end namespace format
+}  // end namespace clang
 
 #endif // LLVM_CLANG_FORMAT_FORMAT_H

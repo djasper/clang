@@ -20,6 +20,7 @@
 #define LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
 
 #include "clang/Basic/SourceManager.h"
+#include "clang/Basic/IdentifierTable.h"
 #include "clang/Lex/Lexer.h"
 
 namespace clang {
@@ -93,6 +94,7 @@ private:
   void parseCaseLabel();
   void parseSwitch();
   void parseAccessSpecifier();
+  void parseEnum();
   void addUnwrappedLine();
   bool eof() const;
   void nextToken();
@@ -103,13 +105,15 @@ private:
 
   UnwrappedLine Line;
   FormatToken FormatTok;
+  bool GreaterStashed;
 
   Lexer &Lex;
   SourceManager &SourceMgr;
+  IdentifierTable IdentTable;
   UnwrappedLineConsumer &Callback;
 };
 
-} // end namespace format
-} // end namespace clang
+}  // end namespace format
+}  // end namespace clang
 
 #endif // LLVM_CLANG_FORMAT_UNWRAPPED_LINE_PARSER_H
