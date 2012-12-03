@@ -235,6 +235,15 @@ TEST_F(FormatTest, DerivedClass) {
                "};");
 }
 
+TEST_F(FormatTest, DoWhile) {
+  verifyFormat("do {\n"
+               "  do_something();\n"
+               "} while (something());");
+  verifyFormat("do\n"
+               "  do_something();\n"
+               "while (something());");
+}
+
 TEST_F(FormatTest, BreaksDesireably) {
   verifyFormat("if (aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"
                "    aaaaaaaaaaaaaaaaaaa(aaaaaaaaaaaaaaa) ||\n"

@@ -128,7 +128,7 @@ void UnwrappedLineParser::parseStatement() {
       parseIfThenElse();
       return;
     case tok::kw_do:
-      parseDoWhileLoop();
+      parseDoWhile();
       return;
     case tok::kw_switch:
       parseSwitch();
@@ -204,10 +204,19 @@ void UnwrappedLineParser::parseIfThenElse() {
   }
 }
 
-void UnwrappedLineParser::parseDoWhileLoop() {
+void UnwrappedLineParser::parseDoWhile() {
+  assert(FormatTok.Tok.is(tok::kw_do) && "'do' expected");
   nextToken();
-  assert(FormatTok.Tok.is(tok::l_brace) && "'{' expected");
-  parseBlock();
+  if (FormatTok.Tok.is(tok::l_brace)) {
+    parseBlock();
+  } else {
+    addUnwrappedLine();
+    ++Line.Level;
+    parseStatement();
+    --Line.Level;
+  }
+
+  assert(FormatTok.Tok.is(tok::kw_while) && "'while' expected");
   nextToken();
   parseStatement();
 }
