@@ -222,7 +222,7 @@ void UnwrappedLineParser::parseDoWhile() {
 }
 
 void UnwrappedLineParser::parseLabel() {
-  // TODO: remove all asserts!!!!
+  // FIXME: remove all asserts.
   assert(FormatTok.Tok.is(tok::colon) && "':' expected");
   nextToken();
   unsigned OldLineLevel = Line.Level;
@@ -237,7 +237,7 @@ void UnwrappedLineParser::parseLabel() {
 
 void UnwrappedLineParser::parseCaseLabel() {
   assert(FormatTok.Tok.is(tok::kw_case) && "'case' expected");
-  // TODO(alexfh): fix handling of complex expressions here.
+  // FIXME: fix handling of complex expressions here.
   do {
     nextToken();
   } while (!eof() && !FormatTok.Tok.is(tok::colon));

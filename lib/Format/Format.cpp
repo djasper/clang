@@ -35,7 +35,7 @@ struct TokenAnnotation {
   TokenType Type;
 
   /// \brief The current parenthesis level, i.e. the number of opening minus
-  /// the number of closing parenthesis le; of the current position.
+  /// the number of closing parenthesis left of the current position.
   unsigned ParenLevel;
 
   bool SpaceRequiredBefore;
