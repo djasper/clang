@@ -29,11 +29,10 @@ namespace format {
 // FIXME: Move somewhere sane.
 struct TokenAnnotation {
   enum TokenType { TT_Unknown, TT_TemplateOpener, TT_BinaryOperator,
-      TT_UnaryOperator, TT_OverloadedOperator };
+      TT_UnaryOperator, TT_OverloadedOperator, TT_PointerOrReference,
+      TT_ConditionalExpr, TT_LineComment, TT_BlockComment };
 
   TokenType Type;
-
-  bool IsTernaryExprColon;
 
   /// \brief The current parenthesis level, i.e. the number of opening minus
   /// the number of closing parenthesis le; of the current position.
@@ -156,8 +155,7 @@ private:
     const FormatToken &Previous = Line.Tokens[Index - 1];
     unsigned ParenLevel = Annotations[Index].ParenLevel;
 
-    if (Line.Tokens[Index].Tok.is(tok::l_paren) ||
-        Line.Tokens[Index].Tok.is(tok::l_square) ||
+    if (Current.Tok.is(tok::l_paren) || Current.Tok.is(tok::l_square) ||
         Annotations[Index].Type == TokenAnnotation::TT_TemplateOpener) {
       State.Indent.push_back(4 + State.LastSpace.back());
       State.LastSpace.push_back(State.LastSpace.back());
@@ -167,42 +165,43 @@ private:
       if (Current.Tok.is(tok::string_literal) &&
           Previous.Tok.is(tok::string_literal))
         State.Column = State.Column - Previous.Tok.getLength();
+      else if (Previous.Tok.is(tok::equal) && ParenLevel != 0)
+        State.Column = State.Indent[ParenLevel] + 4;
       else
         State.Column = State.Indent[ParenLevel];
       if (!DryRun)
-        replaceWhitespace(Line.Tokens[Index], 1, State.Column);
+        replaceWhitespace(Current, 1, State.Column);
 
-      State.Column += Line.Tokens[Index].Tok.getLength();
+      State.Column += Current.Tok.getLength();
       State.LastSpace[ParenLevel] = State.Indent[ParenLevel];
-      if (Line.Tokens[Index].Tok.is(tok::colon) &&
-          !Annotations[Index].IsTernaryExprColon) {
+      if (Current.Tok.is(tok::colon) &&
+          Annotations[Index].Type != TokenAnnotation::TT_ConditionalExpr) {
         State.Indent[ParenLevel] += 2;
         State.CtorInitializerOnNewLine = true;
         State.InCtorInitializer = true;
       }
     } else {
       unsigned Spaces = Annotations[Index].SpaceRequiredBefore ? 1 : 0;
-      if (Line.Tokens[Index].Tok.is(tok::comment))
+      if (Annotations[Index].Type == TokenAnnotation::TT_LineComment)
         Spaces = 2;
       if (!DryRun)
-        replaceWhitespace(Line.Tokens[Index], 0, Spaces);
-      if (Line.Tokens[Index - 1].Tok.is(tok::l_paren))
+        replaceWhitespace(Current, 0, Spaces);
+      if (Previous.Tok.is(tok::l_paren))
         State.Indent[ParenLevel] = State.Column;
-      if (Line.Tokens[Index - 1].Tok.is(tok::less) &&
+      if (Previous.Tok.is(tok::less) &&
           Annotations[Index - 1].Type == TokenAnnotation::TT_TemplateOpener)
         State.Indent[ParenLevel] = State.Column;
-      if (Line.Tokens[Index].Tok.is(tok::colon)) {
+      if (Current.Tok.is(tok::colon)) {
         State.Indent[ParenLevel] = State.Column + 3;
         State.InCtorInitializer = true;
       }
       // Top-level spaces are exempt as that mostly leads to better results.
       if (Spaces > 0 && ParenLevel != 0)
         State.LastSpace[ParenLevel] = State.Column + Spaces;
-      State.Column += Line.Tokens[Index].Tok.getLength() + Spaces;
+      State.Column += Current.Tok.getLength() + Spaces;
     }
 
-    if (Line.Tokens[Index].Tok.is(tok::r_paren) ||
-        Line.Tokens[Index].Tok.is(tok::r_square) ||
+    if (Current.Tok.is(tok::r_paren) || Current.Tok.is(tok::r_square) ||
         Annotations[Index].Type == TokenAnnotation::TT_TemplateOpener) {
       State.Indent.pop_back();
       State.LastSpace.pop_back();
@@ -220,7 +219,7 @@ private:
     if (Token.Tok.is(tok::comma))
       return 1;
     if (Token.Tok.is(tok::equal) || Token.Tok.is(tok::l_paren) ||
-        Token.Tok.is(tok::pipepipe))
+        Token.Tok.is(tok::pipepipe) || Token.Tok.is(tok::ampamp))
       return 2;
     return 3;
   }
@@ -393,6 +392,18 @@ public:
       return false;
     }
 
+    bool parseConditional(unsigned Level) {
+      while (Index < Tokens.size()) {
+        if (Tokens[Index].Tok.is(tok::colon)) {
+          Annotations[Index].Type = TokenAnnotation::TT_ConditionalExpr;
+          next();
+          return true;
+        }
+        consumeToken(Level);
+      }
+      return false;
+    }
+
     void consumeToken(unsigned Level) {
       Annotations[Index].ParenLevel = Level;
       unsigned CurrentIndex = Index;
@@ -419,6 +430,9 @@ public:
         if (!Tokens[Index].Tok.is(tok::l_paren))
           Annotations[Index].Type = TokenAnnotation::TT_OverloadedOperator;
         next();
+        break;
+      case tok::question:
+        parseConditional(Level);
         break;
       default:
         break;
@@ -451,57 +465,46 @@ public:
     AnnotatingParser Parser(SourceMgr, Line.Tokens, Annotations);
     Parser.parseLine();
 
-    bool IsTernaryExpr = false;
-    for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
-      if (Line.Tokens[i].Tok.is(tok::question))
-        IsTernaryExpr = true;
+    determineTokenTypes();
+
+    for (int i = 1, e = Line.Tokens.size(); i != e; ++i) {
       TokenAnnotation &Annotation = Annotations[i];
 
-      if (i != 0)
-        Annotation.CanBreakBefore =
-            canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
+      Annotation.CanBreakBefore =
+          canBreakBetween(Line.Tokens[i - 1], Line.Tokens[i]);
 
       if (Line.Tokens[i].Tok.is(tok::colon)) {
-        if (Line.Tokens[0].Tok.is(tok::kw_case)) {
-          Annotation.SpaceRequiredBefore = false;
-        } else if (i == e - 1) {
+        if (Line.Tokens[0].Tok.is(tok::kw_case) || i == e - 1) {
           Annotation.SpaceRequiredBefore = false;
         } else {
-          Annotation.IsTernaryExprColon = IsTernaryExpr;
-          Annotation.SpaceRequiredBefore = true;
+          Annotation.SpaceRequiredBefore = TokenAnnotation::TT_ConditionalExpr;
         }
-      } else if (i == 0) {
+      } else if (Annotations[i - 1].Type == TokenAnnotation::TT_UnaryOperator) {
         Annotation.SpaceRequiredBefore = false;
-      } else if (i != 0) {
-        if (Line.Tokens[i].Tok.is(tok::string_literal) &&
-            Line.Tokens[i - 1].Tok.is(tok::string_literal)) {
-          Annotation.MustBreakBefore = true;
-        } else if (
-            Annotations[i - 1].Type == TokenAnnotation::TT_UnaryOperator) {
+      } else if (Line.Tokens[i - 1].Tok.is(tok::greater) &&
+                 Line.Tokens[i].Tok.is(tok::greater)) {
+        if (Annotation.Type == TokenAnnotation::TT_TemplateOpener &&
+            Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener)
+          Annotation.SpaceRequiredBefore = Style.SplitTemplateClosingGreater;
+        else
           Annotation.SpaceRequiredBefore = false;
-        } else if (Line.Tokens[i].Tok.is(tok::minus) &&
-                   Line.Tokens[i - 1].Tok.is(tok::equal)) {
-          Annotation.Type = TokenAnnotation::TT_UnaryOperator;
-          Annotation.SpaceRequiredBefore = true;
-        } else if (Line.Tokens[i - 1].Tok.is(tok::greater) &&
-                   Line.Tokens[i].Tok.is(tok::greater)) {
-          if (Annotation.Type == TokenAnnotation::TT_TemplateOpener &&
-              Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener)
-            Annotation.SpaceRequiredBefore = Style.SplitTemplateClosingGreater;
-          else
-            Annotation.SpaceRequiredBefore = false;
-        } else if (
-            Annotation.Type == TokenAnnotation::TT_BinaryOperator ||
-            Annotations[i - 1].Type == TokenAnnotation::TT_BinaryOperator) {
-          Annotation.SpaceRequiredBefore = true;
-        } else if (
-            Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener &&
-            Line.Tokens[i].Tok.is(tok::l_paren)) {
-          Annotation.SpaceRequiredBefore = false;
-        } else {
-          Annotation.SpaceRequiredBefore =
-              spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
-        }
+      } else if (
+          Annotation.Type == TokenAnnotation::TT_BinaryOperator ||
+          Annotations[i - 1].Type == TokenAnnotation::TT_BinaryOperator) {
+        Annotation.SpaceRequiredBefore = true;
+      } else if (
+          Annotations[i - 1].Type == TokenAnnotation::TT_TemplateOpener &&
+          Line.Tokens[i].Tok.is(tok::l_paren)) {
+        Annotation.SpaceRequiredBefore = false;
+      } else {
+        Annotation.SpaceRequiredBefore =
+            spaceRequiredBetween(Line.Tokens[i - 1].Tok, Line.Tokens[i].Tok);
+      }
+
+      if (Annotations[i - 1].Type == TokenAnnotation::TT_LineComment ||
+          (Line.Tokens[i].Tok.is(tok::string_literal) &&
+           Line.Tokens[i - 1].Tok.is(tok::string_literal))) {
+        Annotation.MustBreakBefore = true;
       }
 
       if (Annotation.MustBreakBefore)
@@ -514,8 +517,31 @@ public:
   }
 
 private:
+  void determineTokenTypes() {
+    for (int i = 0, e = Line.Tokens.size(); i != e; ++i) {
+      TokenAnnotation &Annotation = Annotations[i];
+      const FormatToken &Tok = Line.Tokens[i];
+
+      if (Tok.Tok.is(tok::star) || Tok.Tok.is(tok::amp))
+        Annotation.Type = determineStarAmpUsage(i);
+      else if (Tok.Tok.is(tok::minus) && Line.Tokens[i - 1].Tok.is(tok::equal))
+        Annotation.Type = TokenAnnotation::TT_UnaryOperator;
+      else if (isBinaryOperator(Line.Tokens[i]))
+        Annotation.Type = TokenAnnotation::TT_BinaryOperator;
+      else if (Tok.Tok.is(tok::comment)) {
+        StringRef Data(SourceMgr.getCharacterData(Tok.Tok.getLocation()),
+                       Tok.Tok.getLength());
+        if (Data.startswith("//"))
+          Annotation.Type = TokenAnnotation::TT_LineComment;
+        else
+          Annotation.Type = TokenAnnotation::TT_BlockComment;
+      }
+    }
+  }
+
   bool isBinaryOperator(const FormatToken &Tok) {
     switch (Tok.Tok.getKind()) {
+    case tok::equal:
     case tok::equalequal:
     case tok::star:
       //case tok::amp:
@@ -530,6 +556,21 @@ private:
     default:
       return false;
     }
+  }
+
+  TokenAnnotation::TokenType determineStarAmpUsage(unsigned Index) {
+    if (Index == Annotations.size())
+      return TokenAnnotation::TT_Unknown;
+
+    if (Index == 0 ||
+        Annotations[Index - 1].Type == TokenAnnotation::TT_BinaryOperator)
+      return TokenAnnotation::TT_UnaryOperator;
+
+    if (Line.Tokens[Index - 1].Tok.isLiteral() ||
+        Line.Tokens[Index + 1].Tok.isLiteral())
+      return TokenAnnotation::TT_BinaryOperator;
+
+    return TokenAnnotation::TT_PointerOrReference;
   }
 
   bool isIfForOrWhile(Token Tok) {
@@ -616,13 +657,15 @@ private:
     if (TheLine.Tokens.size() == 0)
       return;
 
-    SourceLocation LineBegin = TheLine.Tokens.front().Tok.getLocation();
-    // FIXME: Add length of last token.
-    SourceLocation LineEnd = TheLine.Tokens.back().Tok.getLocation();
+    CharSourceRange LineRange =
+        CharSourceRange::getTokenRange(TheLine.Tokens.front().Tok.getLocation(),
+                                       TheLine.Tokens.back().Tok.getLocation());
 
     for (unsigned i = 0, e = Ranges.size(); i != e; ++i) {
-      if (SourceMgr.isBeforeInTranslationUnit(LineEnd, Ranges[i].getBegin()) ||
-          SourceMgr.isBeforeInTranslationUnit(Ranges[i].getEnd(), LineBegin))
+      if (SourceMgr.isBeforeInTranslationUnit(LineRange.getEnd(),
+                                              Ranges[i].getBegin()) ||
+          SourceMgr.isBeforeInTranslationUnit(Ranges[i].getEnd(),
+                                              LineRange.getBegin()))
         continue;
 
       TokenAnnotator Annotator(TheLine, Style, SourceMgr);

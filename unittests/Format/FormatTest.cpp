@@ -32,7 +32,6 @@ protected:
     tooling::Replacements Replace =
         reformat(Style, Lex, Context.Sources, Ranges);
     EXPECT_TRUE(applyAllReplacements(Replace, Context.Rewrite));
-    //llvm::outs() << Context.getRewrittenText(ID) << "\n";
     return Context.getRewrittenText(ID);
   }
 
@@ -145,6 +144,11 @@ TEST_F(FormatTest, UnderstandsSingleLineComments) {
 
   EXPECT_EQ("void f() {\n  // Doesn't do anything\n}",
             format("void f() {\n// Doesn't do anything\n}"));
+
+  EXPECT_EQ("int i  // This is a fancy variable\n    = 5;",
+            format("int i  // This is a fancy variable\n= 5;"));
+
+  verifyFormat("f(/*test=*/ true);");
 }
 
 TEST_F(FormatTest, DoesNotBreakSemiAfterClassDecl) {
@@ -178,6 +182,13 @@ TEST_F(FormatTest, UnderstandsAccessSpecifiers) {
                "  void f() {\n"
                "  }\n"
                "};");
+  verifyGoogleFormat("class A {\n"
+                     " public:\n"
+                     " protected:\n"
+                     " private:\n"
+                     "  void f() {\n"
+                     "  }\n"
+                     "};");
 }
 
 TEST_F(FormatTest, SwitchStatement) {
@@ -253,18 +264,16 @@ TEST_F(FormatTest, UnderstandsEquals) {
       "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa;");
   verifyFormat(
       "if (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
-      "    aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+      "        aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
       "}");
   verifyFormat(
       "if (a) {\n"
       "} else if (aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
-      "           aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
+      "               aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa) {\n"
       "}");
-}
 
-TEST_F(FormatTest, UnsolvedIssues) {
   verifyFormat("if (int aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa =\n"
-               "    100000000 + 100000000) {\n}");
+               "        100000000 + 100000000) {\n}");
 }
 
 TEST_F(FormatTest, UnderstandsTemplateParameters) {
@@ -292,6 +301,16 @@ TEST_F(FormatTest, UndestandsUnaryOperators) {
 
 TEST_F(FormatTest, UndestandsOverloadedOperators) {
   verifyFormat("bool operator<() {\n}");
+}
+
+TEST_F(FormatTest, UnderstandsUsesOfStar) {
+  verifyFormat("int *f(int *a) {\n}");
+  verifyFormat("int a = b * 10;");
+  verifyFormat("int a = 10 * b;");
+  verifyFormat("int a = b * c;");
+  verifyFormat("int a = *b;");
+  verifyFormat("int a = *b * c;");
+  verifyFormat("int a = b * *c;");
 }
 
 //TEST_F(FormatTest, IncorrectDerivedClass) {
